@@ -33,6 +33,9 @@ class CCharacter : public CEntity
 	friend class CSaveHotReloadTee;
 
 public:
+	
+	vec2 GetCursorPos() const { return m_Pos + vec2(m_LatestInput.m_TargetX, m_LatestInput.m_TargetY); }
+	
 	CCharacter(CGameWorld *pWorld, CNetObj_PlayerInput LastInput);
 
 	void Reset() override;

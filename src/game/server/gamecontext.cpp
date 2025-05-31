@@ -1,6 +1,7 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include "gamecontext.h"
+#include "entities/shield.h"
 
 #include <vector>
 
@@ -3640,6 +3641,39 @@ void CGameContext::ConchainSettingUpdate(IConsole::IResult *pResult, void *pUser
 	}
 }
 
+// щиток (логика определения где появляться)
+
+void CGameContext::ConAddCheckpoint(IConsole::IResult *pResult, void *pUserData)
+{
+    CGameContext *pGameServer = static_cast<CGameContext *>(pUserData);
+    int ClientID = pResult->m_ClientId;
+
+    if(ClientID < 0 || ClientID >= MAX_CLIENTS)
+    {
+        dbg_msg("addcp", "Неверный ClientID: %d", ClientID);
+        return;
+    }
+
+    CPlayer *pPlayer = pGameServer->m_apPlayers[ClientID];
+    if(!pPlayer)
+    {
+        dbg_msg("addcp", "Игрок с ClientID %d не найден", ClientID);
+        return;
+    }
+
+    CCharacter *pChr = pPlayer->GetCharacter();
+    if(!pChr)
+    {
+        dbg_msg("addcp", "У игрока нет персонажа");
+        return;
+    }
+
+    vec2 CursorPos = pChr->GetCursorPos();
+
+    dbg_msg("addcp", "Создаю щит на позиции курсора %.1f %.1f", CursorPos.x, CursorPos.y);
+    new CShield(&pGameServer->m_World, CursorPos);
+}
+
 void CGameContext::OnConsoleInit()
 {
 	m_pServer = Kernel()->RequestInterface<IServer>();
@@ -3681,6 +3715,7 @@ void CGameContext::OnConsoleInit()
 	Console()->Register("votes", "?i[page]", CFGFLAG_SERVER, ConVotes, this, "Show all votes (page 0 by default, 20 entries per page)");
 	Console()->Register("dump_antibot", "", CFGFLAG_SERVER | CFGFLAG_STORE, ConDumpAntibot, this, "Dumps the antibot status");
 	Console()->Register("antibot", "r[command]", CFGFLAG_SERVER | CFGFLAG_STORE, ConAntibot, this, "Sends a command to the antibot");
+	Console()->Register("addcp", "", CFGFLAG_SERVER, ConAddCheckpoint, this, "Добавить щиток на позицию игрока");
 
 	Console()->Chain("sv_motd", ConchainSpecialMotdupdate, this);
 

@@ -7,6 +7,7 @@
 #include <game/mapitems.h>
 #include <game/server/score.h>
 #include <game/teamscore.h>
+#include "entities/shield.h"
 
 #include "gamecontext.h"
 #include "gamecontroller.h"

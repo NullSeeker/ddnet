@@ -2717,6 +2717,8 @@ if(SERVER)
     ddracecommands.cpp
     entities/character.cpp
     entities/character.h
+    entities/shield.h
+    entities/shield.cpp
     entities/door.cpp
     entities/door.h
     entities/dragger.cpp
