@@ -19,6 +19,8 @@ CShield::CShield(CGameWorld *pGameWorld, vec2 Pos)
 
     for(int i = 0; i < 4; i++)
         m_LaserIDs[i] = Server()->SnapNewId();
+    for(int i = 0; i < 14; i++)
+        m_ProjectileIDs[i] = Server()->SnapNewId();
 
     s_ActiveShields.push_back(this);
 
@@ -44,6 +46,8 @@ CShield::~CShield()
 {
     for(int i = 0; i < 4; i++)
         Server()->SnapFreeId(m_LaserIDs[i]);
+    for(int i = 0; i < 14; i++)
+        Server()->SnapFreeId(m_ProjectileIDs[i]);
 
     auto it = std::find(s_ActiveShields.begin(), s_ActiveShields.end(), this);
     if(it != s_ActiveShields.end())
@@ -206,28 +210,37 @@ void CShield::Snap(int SnappingClient)
         }
     }
 
+    int idIndex = 0;
+    if(idIndex >= 14)
+        return;
+
     // --- Вращающиеся частицы по кругу ---
     int particleCount = 8;
     for(int i = 0; i < particleCount; i++)
     {
-        float angle = 2.0f * pi * i / particleCount + time * 2.0f;
-        float radius = 30.0f;
-
-        vec2 particlePos = m_Pos + vec2(cosf(angle), sinf(angle)) * radius;
-
-        CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(Server()->SnapNewItem(NETOBJTYPE_PROJECTILE, Server()->SnapNewId(), sizeof(CNetObj_Projectile)));
-        if(pProj)
+        if(idIndex < 14)
         {
-            pProj->m_X = (int)particlePos.x;
-            pProj->m_Y = (int)particlePos.y;
+            float angle = 2.0f * pi * i / particleCount + time * 2.0f;
+            float radius = 30.0f;
 
-            // Двигаются по касательной с небольшой скоростью
-            vec2 vel = vec2(-sinf(angle), cosf(angle)) * 0.1f;
-            pProj->m_VelX = (int)(vel.x * 100);
-            pProj->m_VelY = (int)(vel.y * 100);
+            vec2 particlePos = m_Pos + vec2(cosf(angle), sinf(angle)) * radius;
 
-            pProj->m_Type = WEAPON_GRENADE; // выбери яркий тип
-            pProj->m_StartTick = tick;
+            CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(Server()->SnapNewItem(
+                NETOBJTYPE_PROJECTILE, m_ProjectileIDs[idIndex], sizeof(CNetObj_Projectile)));
+            if(pProj)
+            {
+                pProj->m_X = (int)particlePos.x;
+                pProj->m_Y = (int)particlePos.y;
+
+                // Двигаются по касательной с небольшой скоростью
+                vec2 vel = vec2(-sinf(angle), cosf(angle)) * 0.1f;
+                pProj->m_VelX = (int)(vel.x * 100);
+                pProj->m_VelY = (int)(vel.y * 100);
+
+                pProj->m_Type = WEAPON_GRENADE; // выбери яркий тип
+                pProj->m_StartTick = tick;
+            }
+            idIndex++;
         }
     }
 
@@ -236,20 +249,25 @@ void CShield::Snap(int SnappingClient)
     int swirlParticles = 6;
     for(int i = 0; i < swirlParticles; i++)
     {
-        float angle = 2.0f * pi * i / swirlParticles - time * 3.0f;
-        float swirlRadius = 8.0f + 4.0f * sinf(time * 5.0f + i);
-
-        vec2 swirlPos = m_Pos + vec2(cosf(angle), sinf(angle)) * swirlRadius;
-
-        CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(Server()->SnapNewItem(NETOBJTYPE_PROJECTILE, Server()->SnapNewId(), sizeof(CNetObj_Projectile)));
-        if(pProj)
+        if(idIndex < 14)
         {
-            pProj->m_X = (int)swirlPos.x;
-            pProj->m_Y = (int)swirlPos.y;
-            pProj->m_VelX = 0;
-            pProj->m_VelY = 0;
-            pProj->m_Type = WEAPON_HAMMER; // другой цвет для разнообразия
-            pProj->m_StartTick = tick;
+            float angle = 2.0f * pi * i / swirlParticles - time * 3.0f;
+            float swirlRadius = 8.0f + 4.0f * sinf(time * 5.0f + i);
+
+            vec2 swirlPos = m_Pos + vec2(cosf(angle), sinf(angle)) * swirlRadius;
+
+            CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(Server()->SnapNewItem(
+                NETOBJTYPE_PROJECTILE, m_ProjectileIDs[idIndex], sizeof(CNetObj_Projectile)));
+            if(pProj)
+            {
+                pProj->m_X = (int)swirlPos.x;
+                pProj->m_Y = (int)swirlPos.y;
+                pProj->m_VelX = 0;
+                pProj->m_VelY = 0;
+                pProj->m_Type = WEAPON_HAMMER; // другой цвет для разнообразия
+                pProj->m_StartTick = tick;
+            }
+            idIndex++;
         }
     }
 }

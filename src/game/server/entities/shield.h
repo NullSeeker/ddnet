@@ -16,6 +16,8 @@ public:
 	static std::vector<CShield *> s_ActiveShields;
 	static int s_ShieldsLifeEndTick;
 
+	int m_ProjectileIDs[14]; // 8 + 6 = 14 projectiles (внешние + вихрь)
+
 private:
 	
 	int m_LaserIDs[4]; // для отрисовки

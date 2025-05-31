@@ -3650,7 +3650,7 @@ void CGameContext::ConAddCheckpoint(IConsole::IResult *pResult, void *pUserData)
 
     if(CShield::s_ActiveShields.size() >= 2)
     {
-        dbg_msg("addcp", "2 щита уже созданы");
+		dbg_msg("addcp", "2 щита уже созданы");
         return;
     }
 	
