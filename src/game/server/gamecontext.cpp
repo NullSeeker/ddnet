@@ -3648,8 +3648,13 @@ void CGameContext::ConAddCheckpoint(IConsole::IResult *pResult, void *pUserData)
     CGameContext *pGameServer = static_cast<CGameContext *>(pUserData);
     int ClientID = pResult->m_ClientId;
 
-    if(CShield::s_ActiveShields.size() >= 2)
+    CPlayer *pPlayer = pGameServer->m_apPlayers[ClientID];
+	if(CShield::s_ActiveShields.size() >= 2)
     {
+		CCharacter *pChr = pPlayer->GetCharacter();
+		if(pChr)
+        	pGameServer->CreateSound(pChr->m_Pos, SOUND_WEAPON_NOAMMO);
+
 		dbg_msg("addcp", "2 щита уже созданы");
         return;
     }
@@ -3660,7 +3665,6 @@ void CGameContext::ConAddCheckpoint(IConsole::IResult *pResult, void *pUserData)
         return;
     }
 
-    CPlayer *pPlayer = pGameServer->m_apPlayers[ClientID];
     if(!pPlayer)
     {
         dbg_msg("addcp", "Игрок с ClientID %d не найден", ClientID);
