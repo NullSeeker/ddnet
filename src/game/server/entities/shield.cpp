@@ -64,6 +64,13 @@ void CShield::Tick()
     // Удаляем щит если время вышло
     if(m_LifeTimeTicks != -1 && Server()->Tick() > m_LifeTimeTicks)
     {
+        // Взрыв гранатомёта на позициях всех щитов перед удалением
+        for(auto pShield : s_ActiveShields)
+        {
+            GameServer()->CreateSound(pShield->m_Pos, SOUND_GRENADE_EXPLODE);
+    
+        }
+    
         // Удаляем все активные щиты сразу
         for(auto pShield : s_ActiveShields)
         {
@@ -96,7 +103,7 @@ void CShield::Tick()
                     pChr->m_Pos = pOtherShield->m_Pos + vec2(0, -32);
                     CCharacterCore *pCore = pChr->Core();
                     pCore->m_Pos = pChr->m_Pos;
-                    pCore->m_Vel = vec2(0, 0);
+                    //pCore->m_Vel = vec2(0, 0); сброс скорости игрока на 0 
                     pChr->MarkTeleported(Server()->Tick());
 
                     GameServer()->CreateSound(pChr->m_Pos, SOUND_PLAYER_SPAWN);
@@ -160,91 +167,89 @@ void CShield::Snap(int SnappingClient)
     if(!Server() || NetworkClipped(SnappingClient))
         return;
 
-    // Центральная позиция — как обычно
+    // Центральный объект — щит
     CNetObj_Pickup *pPickup = static_cast<CNetObj_Pickup *>(Server()->SnapNewItem(NETOBJTYPE_PICKUP, GetId(), sizeof(CNetObj_Pickup)));
     if(!pPickup)
         return;
 
     pPickup->m_X = round_to_int(m_Pos.x);
     pPickup->m_Y = round_to_int(m_Pos.y);
-    pPickup->m_Type = POWERUP_NINJA;
+    pPickup->m_Type = POWERUP_ARMOR;
 
-    // 🔲 Квадрат из лазеров
-    vec2 p1 = m_Pos + vec2(-32, -32);
-    vec2 p2 = m_Pos + vec2( 32, -32);
-    vec2 p3 = m_Pos + vec2( 32,  32);
-    vec2 p4 = m_Pos + vec2(-32,  32);
+    // Параметры анимации
+    int tick = Server()->Tick();
+    float time = tick / 60.0f; // Время в секундах
 
-    // Каждому лазеру нужен уникальный ID
+    // --- Пульсирующий круг ---
+    float pulseRadius = 40.0f + 10.0f * sinf(time * 3.0f); // Радиус пульсирует от 30 до 50
 
-    // Лазер 1: p1 -> p2
-    if(CNetObj_Laser *pLaser = static_cast<CNetObj_Laser *>(Server()->SnapNewItem(NETOBJTYPE_LASER, m_LaserIDs[0], sizeof(CNetObj_Laser))))
-    {
-        pLaser->m_X = (int)p2.x;
-        pLaser->m_Y = (int)p2.y;
-        pLaser->m_FromX = (int)p1.x;
-        pLaser->m_FromY = (int)p1.y;
-        pLaser->m_StartTick = Server()->Tick();
-    }
-
-    // Лазер 2: p2 -> p3
-    if(CNetObj_Laser *pLaser = static_cast<CNetObj_Laser *>(Server()->SnapNewItem(NETOBJTYPE_LASER, m_LaserIDs[1], sizeof(CNetObj_Laser))))
-    {
-        pLaser->m_X = (int)p3.x;
-        pLaser->m_Y = (int)p3.y;
-        pLaser->m_FromX = (int)p2.x;
-        pLaser->m_FromY = (int)p2.y;
-        pLaser->m_StartTick = Server()->Tick();
-    }
-
-    // Лазер 3: p3 -> p4
-    if(CNetObj_Laser *pLaser = static_cast<CNetObj_Laser *>(Server()->SnapNewItem(NETOBJTYPE_LASER, m_LaserIDs[2], sizeof(CNetObj_Laser))))
-    {
-        pLaser->m_X = (int)p4.x;
-        pLaser->m_Y = (int)p4.y;
-        pLaser->m_FromX = (int)p3.x;
-        pLaser->m_FromY = (int)p3.y;
-        pLaser->m_StartTick = Server()->Tick();
-    }
-
-    // Лазер 4: p4 -> p1
-    if(CNetObj_Laser *pLaser = static_cast<CNetObj_Laser *>(Server()->SnapNewItem(NETOBJTYPE_LASER, m_LaserIDs[3], sizeof(CNetObj_Laser))))
-    {
-        pLaser->m_X = (int)p1.x;
-        pLaser->m_Y = (int)p1.y;
-        pLaser->m_FromX = (int)p4.x;
-        pLaser->m_FromY = (int)p4.y;
-        pLaser->m_StartTick = Server()->Tick();
-    }
-
+    // Отрисовка пульсирующего круга через лазеры (4 линии)
     for(int i = 0; i < 4; i++)
     {
-        float Angle = 2.0f * pi * i / 4.0f + (Server()->Tick() % 360) * pi / 180.0f;
-        vec2 Offset = vec2(cosf(Angle), sinf(Angle)) * 28.0f;
-        vec2 ParticlePos = m_Pos + Offset;
-        vec2 Velocity = vec2(cosf(Angle + pi / 2.0f), sinf(Angle + pi / 2.0f)) * 0.01f;
-    
-        CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(
-            Server()->SnapNewItem(NETOBJTYPE_PROJECTILE, Server()->SnapNewId(), sizeof(CNetObj_Projectile))
-        );
-    
-        if(pProj)
+        float angle1 = 2.0f * pi * i / 4.0f + time;
+        float angle2 = 2.0f * pi * (i+1) / 4.0f + time;
+
+        vec2 from = m_Pos + vec2(cosf(angle1), sinf(angle1)) * pulseRadius;
+        vec2 to   = m_Pos + vec2(cosf(angle2), sinf(angle2)) * pulseRadius;
+
+        // Используем SnapNewId() для частиц или лазеров
+        int id = m_LaserIDs[i];
+
+        if(CNetObj_Laser *pLaser = static_cast<CNetObj_Laser *>(Server()->SnapNewItem(NETOBJTYPE_LASER, id, sizeof(CNetObj_Laser))))
         {
-            pProj->m_X = (int)(ParticlePos.x);
-            pProj->m_Y = (int)(ParticlePos.y);
-            pProj->m_VelX = (int)(Velocity.x * 100.0f); // масштабируем
-            pProj->m_VelY = (int)(Velocity.y * 100.0f);
-            pProj->m_Type = WEAPON_SHOTGUN; // можно поменять на WEAPON_SHOTGUN, NINJA и т.д.
-            pProj->m_StartTick = Server()->Tick();
+            pLaser->m_X = (int)to.x;
+            pLaser->m_Y = (int)to.y;
+            pLaser->m_FromX = (int)from.x;
+            pLaser->m_FromY = (int)from.y;
+            pLaser->m_StartTick = tick;
+            // Прозрачность лазеров задается на клиенте, на сервере нельзя, но визуал можно варьировать через позицию и частоту обновления
         }
     }
-    if(Server()->Tick() % (Server()->TickSpeed() * 1) == 0)
+
+    // --- Вращающиеся частицы по кругу ---
+    int particleCount = 8;
+    for(int i = 0; i < particleCount; i++)
     {
-        CNetEvent_Explosion *pExplosion = static_cast<CNetEvent_Explosion *>(Server()->SnapNewItem(NETEVENTTYPE_EXPLOSION, GetId(), sizeof(CNetEvent_Explosion)));
-        if(pExplosion)
+        float angle = 2.0f * pi * i / particleCount + time * 2.0f;
+        float radius = 30.0f;
+
+        vec2 particlePos = m_Pos + vec2(cosf(angle), sinf(angle)) * radius;
+
+        CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(Server()->SnapNewItem(NETOBJTYPE_PROJECTILE, Server()->SnapNewId(), sizeof(CNetObj_Projectile)));
+        if(pProj)
         {
-            pExplosion->m_X = (int)m_Pos.x;
-            pExplosion->m_Y = (int)m_Pos.y;
+            pProj->m_X = (int)particlePos.x;
+            pProj->m_Y = (int)particlePos.y;
+
+            // Двигаются по касательной с небольшой скоростью
+            vec2 vel = vec2(-sinf(angle), cosf(angle)) * 0.1f;
+            pProj->m_VelX = (int)(vel.x * 100);
+            pProj->m_VelY = (int)(vel.y * 100);
+
+            pProj->m_Type = WEAPON_GRENADE; // выбери яркий тип
+            pProj->m_StartTick = tick;
+        }
+    }
+
+    // --- Энергетический вихрь в центре ---
+    // Несколько маленьких частиц, меняющих радиус и позицию
+    int swirlParticles = 6;
+    for(int i = 0; i < swirlParticles; i++)
+    {
+        float angle = 2.0f * pi * i / swirlParticles - time * 3.0f;
+        float swirlRadius = 8.0f + 4.0f * sinf(time * 5.0f + i);
+
+        vec2 swirlPos = m_Pos + vec2(cosf(angle), sinf(angle)) * swirlRadius;
+
+        CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(Server()->SnapNewItem(NETOBJTYPE_PROJECTILE, Server()->SnapNewId(), sizeof(CNetObj_Projectile)));
+        if(pProj)
+        {
+            pProj->m_X = (int)swirlPos.x;
+            pProj->m_Y = (int)swirlPos.y;
+            pProj->m_VelX = 0;
+            pProj->m_VelY = 0;
+            pProj->m_Type = WEAPON_HAMMER; // другой цвет для разнообразия
+            pProj->m_StartTick = tick;
         }
     }
 }
