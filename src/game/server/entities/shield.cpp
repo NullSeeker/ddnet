@@ -25,7 +25,7 @@ CShield::CShield(CGameWorld *pGameWorld, vec2 Pos)
     if(s_ActiveShields.size() == 2)
     {
         // Устанавливаем таймер для обоих щитов
-        s_ShieldsLifeEndTick = Server()->Tick() + Server()->TickSpeed() * 10; // 30 сек
+        s_ShieldsLifeEndTick = Server()->Tick() + Server()->TickSpeed() * 10; // 10 сек
         // Обновляем у второго щита тоже
         for(auto pShield : s_ActiveShields)
         {
@@ -92,7 +92,7 @@ void CShield::Tick()
         CCharacter *pChr = pPlayer->GetCharacter();
         if(!pChr) continue;
 
-        if(distance(pChr->m_Pos, m_Pos) < 32.0f && pChr->CanTeleport(Server()->Tick(), Server()->TickSpeed() * 1)) // 3 секунды таймаут
+        if(distance(pChr->m_Pos, m_Pos) < 32.0f && pChr->CanTeleport(Server()->Tick(), Server()->TickSpeed() * 1)) // 1 секунда задержка воизбежании багов
         {
             dbg_msg("shield", "Player %d teleporting", pPlayer->GetCid());
         
