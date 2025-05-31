@@ -3648,7 +3648,13 @@ void CGameContext::ConAddCheckpoint(IConsole::IResult *pResult, void *pUserData)
     CGameContext *pGameServer = static_cast<CGameContext *>(pUserData);
     int ClientID = pResult->m_ClientId;
 
-    if(ClientID < 0 || ClientID >= MAX_CLIENTS)
+    if(CShield::s_ActiveShields.size() >= 2)
+    {
+        dbg_msg("addcp", "2 щита уже созданы");
+        return;
+    }
+	
+	if(ClientID < 0 || ClientID >= MAX_CLIENTS)
     {
         dbg_msg("addcp", "Неверный ClientID: %d", ClientID);
         return;

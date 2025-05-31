@@ -34,7 +34,21 @@ class CCharacter : public CEntity
 
 public:
 	
+	// shield 
 	vec2 GetCursorPos() const { return m_Pos + vec2(m_LatestInput.m_TargetX, m_LatestInput.m_TargetY); }
+	CCharacterCore *Core() { return &m_Core; }
+
+	int m_LastTeleportTick = -1000;
+
+	bool CanTeleport(int currentTick, int cooldownTicks)
+	{
+    	return currentTick - m_LastTeleportTick >= cooldownTicks;
+	}
+
+	void MarkTeleported(int currentTick)
+	{
+    	m_LastTeleportTick = currentTick;
+	}
 	
 	CCharacter(CGameWorld *pWorld, CNetObj_PlayerInput LastInput);
 

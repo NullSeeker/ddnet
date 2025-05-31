@@ -11,19 +11,17 @@ public:
     CShield(CGameWorld *pGameWorld, vec2 Pos); //конструктор
 	~CShield(); //дестркутор
 	virtual void Snap(int SnappingClient) override;
+	virtual void Tick() override;
 
-	int Type() const { return m_Type; }
-	int Subtype() const { return m_Subtype; }
+	static std::vector<CShield *> s_ActiveShields;
+	static int s_ShieldsLifeEndTick;
 
 private:
-	int m_Type;
-	int m_Subtype;
-	int m_LaserIDs[4];
+	
+	int m_LaserIDs[4]; // для отрисовки
+	
+	int m_LifeTimeTicks; //время жизини щита
 
-	// DDRace
-
-	void Move();
-	vec2 m_Core;
 };
 
 #endif
