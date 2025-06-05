@@ -3648,23 +3648,13 @@ void CGameContext::ConAddCheckpoint(IConsole::IResult *pResult, void *pUserData)
     CGameContext *pGameServer = static_cast<CGameContext *>(pUserData);
     int ClientID = pResult->m_ClientId;
 
-    CPlayer *pPlayer = pGameServer->m_apPlayers[ClientID];
-	if(CShield::s_ActiveShields.size() >= 2)
-    {
-		CCharacter *pChr = pPlayer->GetCharacter();
-		if(pChr)
-        	pGameServer->CreateSound(pChr->m_Pos, SOUND_WEAPON_NOAMMO);
-
-		dbg_msg("addcp", "2 щита уже созданы");
-        return;
-    }
-	
-	if(ClientID < 0 || ClientID >= MAX_CLIENTS)
+    if(ClientID < 0 || ClientID >= MAX_CLIENTS)
     {
         dbg_msg("addcp", "Неверный ClientID: %d", ClientID);
         return;
     }
 
+    CPlayer *pPlayer = pGameServer->m_apPlayers[ClientID];
     if(!pPlayer)
     {
         dbg_msg("addcp", "Игрок с ClientID %d не найден", ClientID);
@@ -3679,6 +3669,19 @@ void CGameContext::ConAddCheckpoint(IConsole::IResult *pResult, void *pUserData)
     }
 
     vec2 CursorPos = pChr->GetCursorPos();
+
+    if(pGameServer->Collision()->CheckPoint(CursorPos.x, CursorPos.y))
+    {
+        pGameServer->CreateSound(CursorPos, SOUND_WEAPON_NOAMMO);
+        return;
+    }
+
+    if(CShield::s_ActiveShields.size() >= 2)
+    {
+        pGameServer->CreateSound(pChr->m_Pos, SOUND_WEAPON_NOAMMO);
+        dbg_msg("addcp", "2 щита уже созданы");
+        return;
+    }
 
     dbg_msg("addcp", "Создаю щит на позиции курсора %.1f %.1f", CursorPos.x, CursorPos.y);
     new CShield(&pGameServer->m_World, CursorPos);
