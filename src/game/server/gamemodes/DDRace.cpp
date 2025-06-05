@@ -11,8 +11,8 @@
 #include <game/server/score.h>
 #include <game/version.h>
 
-#define GAME_TYPE_NAME "DDraceNetwork"
-#define TEST_TYPE_NAME "TestDDraceNetwork"
+#define GAME_TYPE_NAME "N-DDrace"
+#define TEST_TYPE_NAME "N-DDrace"
 
 CGameControllerDDRace::CGameControllerDDRace(class CGameContext *pGameServer) :
 	IGameController(pGameServer)
@@ -135,7 +135,7 @@ void CGameControllerDDRace::OnPlayerConnect(CPlayer *pPlayer)
 		str_format(aBuf, sizeof(aBuf), "'%s' entered and joined the %s", Server()->ClientName(ClientId), GetTeamName(pPlayer->GetTeam()));
 		GameServer()->SendChat(-1, TEAM_ALL, aBuf, -1, CGameContext::FLAG_SIX);
 
-		GameServer()->SendChatTarget(ClientId, "DDraceNetwork Mod. Version: " GAME_VERSION);
+		GameServer()->SendChatTarget(ClientId, "N-DDrace Mod. Version: " GAME_VERSION);
 		GameServer()->SendChatTarget(ClientId, "please visit DDNet.org or say /info and make sure to read our /rules");
 	}
 }

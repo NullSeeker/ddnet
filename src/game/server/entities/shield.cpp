@@ -17,9 +17,9 @@ CShield::CShield(CGameWorld *pGameWorld, vec2 Pos)
     GameWorld()->InsertEntity(this);
     GameServer()->CreateSound(m_Pos, SOUND_WEAPON_SPAWN);
 
-    for(int i = 0; i < 4; i++)
+    for(int i = 0; i < 8; i++)
         m_LaserIDs[i] = Server()->SnapNewId();
-    for(int i = 0; i < 14; i++)
+    for(int i = 0; i < 32; i++)
         m_ProjectileIDs[i] = Server()->SnapNewId();
 
     s_ActiveShields.push_back(this);
@@ -44,9 +44,9 @@ CShield::CShield(CGameWorld *pGameWorld, vec2 Pos)
 
 CShield::~CShield()
 {
-    for(int i = 0; i < 4; i++)
+    for(int i = 0; i < 8; i++)
         Server()->SnapFreeId(m_LaserIDs[i]);
-    for(int i = 0; i < 14; i++)
+    for(int i = 0; i < 32; i++)
         Server()->SnapFreeId(m_ProjectileIDs[i]);
 
     auto it = std::find(s_ActiveShields.begin(), s_ActiveShields.end(), this);
@@ -107,7 +107,7 @@ void CShield::Tick()
                     pChr->m_Pos = pOtherShield->m_Pos + vec2(0, -32);
                     CCharacterCore *pCore = pChr->Core();
                     pCore->m_Pos = pChr->m_Pos;
-                    //pCore->m_Vel = vec2(0, 0); сброс скорости игрока на 0 
+                    //pCore->m_Vel = vec2(0, 0); // сброс скорости игрока на 0 
                     pChr->MarkTeleported(Server()->Tick());
 
                     GameServer()->CreateSound(pChr->m_Pos, SOUND_PLAYER_SPAWN);
@@ -171,7 +171,6 @@ void CShield::Snap(int SnappingClient)
     if(!Server() || NetworkClipped(SnappingClient))
         return;
 
-    // Центральный объект — щит
     CNetObj_Pickup *pPickup = static_cast<CNetObj_Pickup *>(Server()->SnapNewItem(NETOBJTYPE_PICKUP, GetId(), sizeof(CNetObj_Pickup)));
     if(!pPickup)
         return;
@@ -180,25 +179,22 @@ void CShield::Snap(int SnappingClient)
     pPickup->m_Y = round_to_int(m_Pos.y);
     pPickup->m_Type = POWERUP_ARMOR;
 
-    // Параметры анимации
     int tick = Server()->Tick();
-    float time = tick / 60.0f; // Время в секундах
+    float time = tick / 60.0f;
 
-    // --- Пульсирующий круг ---
-    float pulseRadius = 40.0f + 10.0f * sinf(time * 3.0f); // Радиус пульсирует от 30 до 50
+    // Лазерный круг
+    const int NumLasers = 8;
+    float radius = 48.0f;
 
-    // Отрисовка пульсирующего круга через лазеры (4 линии)
-    for(int i = 0; i < 4; i++)
+    for(int i = 0; i < NumLasers; i++)
     {
-        float angle1 = 2.0f * pi * i / 4.0f + time;
-        float angle2 = 2.0f * pi * (i+1) / 4.0f + time;
+        float angle1 = 2.0f * pi * i / NumLasers + time;
+        float angle2 = 2.0f * pi * (i + 1) / NumLasers + time;
 
-        vec2 from = m_Pos + vec2(cosf(angle1), sinf(angle1)) * pulseRadius;
-        vec2 to   = m_Pos + vec2(cosf(angle2), sinf(angle2)) * pulseRadius;
+        vec2 from = m_Pos + vec2(cosf(angle1), sinf(angle1)) * radius;
+        vec2 to = m_Pos + vec2(cosf(angle2), sinf(angle2)) * radius;
 
-        // Используем SnapNewId() для частиц или лазеров
         int id = m_LaserIDs[i];
-
         if(CNetObj_Laser *pLaser = static_cast<CNetObj_Laser *>(Server()->SnapNewItem(NETOBJTYPE_LASER, id, sizeof(CNetObj_Laser))))
         {
             pLaser->m_X = (int)to.x;
@@ -206,68 +202,30 @@ void CShield::Snap(int SnappingClient)
             pLaser->m_FromX = (int)from.x;
             pLaser->m_FromY = (int)from.y;
             pLaser->m_StartTick = tick;
-            // Прозрачность лазеров задается на клиенте, на сервере нельзя, но визуал можно варьировать через позицию и частоту обновления
         }
     }
 
+    // Частицы внутри круга
     int idIndex = 0;
-    if(idIndex >= 14)
-        return;
+    const int NumParticles = 8;
 
-    // --- Вращающиеся частицы по кругу ---
-    int particleCount = 8;
-    for(int i = 0; i < particleCount; i++)
+    for(int i = 0; i < NumParticles && idIndex < 32; i++)
     {
-        if(idIndex < 14)
+        float angle = 2.0f * pi * i / NumParticles + time * 2.0f;
+        float innerRadius = 20.0f + 4.0f * sinf(time * 2.0f + i);
+
+        vec2 pos = m_Pos + vec2(cosf(angle), sinf(angle)) * innerRadius;
+
+        CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(Server()->SnapNewItem(
+            NETOBJTYPE_PROJECTILE, m_ProjectileIDs[idIndex++], sizeof(CNetObj_Projectile)));
+        if(pProj)
         {
-            float angle = 2.0f * pi * i / particleCount + time * 2.0f;
-            float radius = 30.0f;
-
-            vec2 particlePos = m_Pos + vec2(cosf(angle), sinf(angle)) * radius;
-
-            CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(Server()->SnapNewItem(
-                NETOBJTYPE_PROJECTILE, m_ProjectileIDs[idIndex], sizeof(CNetObj_Projectile)));
-            if(pProj)
-            {
-                pProj->m_X = (int)particlePos.x;
-                pProj->m_Y = (int)particlePos.y;
-
-                // Двигаются по касательной с небольшой скоростью
-                vec2 vel = vec2(-sinf(angle), cosf(angle)) * 0.1f;
-                pProj->m_VelX = (int)(vel.x * 100);
-                pProj->m_VelY = (int)(vel.y * 100);
-
-                pProj->m_Type = WEAPON_GRENADE; // выбери яркий тип
-                pProj->m_StartTick = tick;
-            }
-            idIndex++;
-        }
-    }
-
-    // --- Энергетический вихрь в центре ---
-    // Несколько маленьких частиц, меняющих радиус и позицию
-    int swirlParticles = 6;
-    for(int i = 0; i < swirlParticles; i++)
-    {
-        if(idIndex < 14)
-        {
-            float angle = 2.0f * pi * i / swirlParticles - time * 3.0f;
-            float swirlRadius = 8.0f + 4.0f * sinf(time * 5.0f + i);
-
-            vec2 swirlPos = m_Pos + vec2(cosf(angle), sinf(angle)) * swirlRadius;
-
-            CNetObj_Projectile *pProj = static_cast<CNetObj_Projectile *>(Server()->SnapNewItem(
-                NETOBJTYPE_PROJECTILE, m_ProjectileIDs[idIndex], sizeof(CNetObj_Projectile)));
-            if(pProj)
-            {
-                pProj->m_X = (int)swirlPos.x;
-                pProj->m_Y = (int)swirlPos.y;
-                pProj->m_VelX = 0;
-                pProj->m_VelY = 0;
-                pProj->m_Type = WEAPON_HAMMER; // другой цвет для разнообразия
-                pProj->m_StartTick = tick;
-            }
-            idIndex++;
+            pProj->m_X = (int)pos.x;
+            pProj->m_Y = (int)pos.y;
+            pProj->m_VelX = 0;
+            pProj->m_VelY = 0;
+            pProj->m_Type = WEAPON_HAMMER;
+            pProj->m_StartTick = tick;
         }
     }
 }
