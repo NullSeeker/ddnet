@@ -87,6 +87,9 @@ private:
 	size_t m_TasPlaybackIndex = 0;
 	int m_TasPlaybackSlowFactor = 1;
 	int m_TasPlaybackSlowCounter = 0;
+	bool m_TasPlaybackCheckedStart = false;
+	bool m_TasPlaybackHasStartPosition = false;
+	ivec2 m_TasPlaybackStartPosition = ivec2(0, 0);
 	bool m_TasHasPositionData = false;
 	std::vector<CTasInput> m_vTasInputs;
 	char m_aTasFilename[IO_MAX_PATH_LENGTH] = {};
