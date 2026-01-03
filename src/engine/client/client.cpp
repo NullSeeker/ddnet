@@ -3254,6 +3254,19 @@ void CClient::Run()
 		// update sound
 		Sound()->Update();
 
+		bool LimitDemoFps = State() == IClient::STATE_DEMOPLAYBACK;
+		if(!LimitDemoFps)
+		{
+			for(const auto &DemoRecorder : m_aDemoRecorder)
+			{
+				if(DemoRecorder.IsRecording())
+				{
+					LimitDemoFps = true;
+					break;
+				}
+			}
+		}
+
 		if(CtrlShiftKey(KEY_D, LastD))
 			g_Config.m_Debug ^= 1;
 
@@ -3301,10 +3314,14 @@ void CClient::Run()
 				GfxRefreshRate = 0;
 			}
 #endif
+			if(LimitDemoFps && (GfxRefreshRate == 0 || GfxRefreshRate > 60))
+			{
+				GfxRefreshRate = 60;
+			}
 
 			if(IsRenderActive &&
 				(!AsyncRenderOld || m_pGraphics->IsIdle()) &&
-				(!GfxRefreshRate || (time_freq() / (int64_t)g_Config.m_GfxRefreshRate) <= Now - LastRenderTime))
+				(!GfxRefreshRate || (time_freq() / (int64_t)GfxRefreshRate) <= Now - LastRenderTime))
 			{
 				// update frametime
 				m_RenderFrameTime = (Now - m_LastRenderTime) / (float)time_freq();
@@ -3326,7 +3343,7 @@ void CClient::Run()
 				m_FrameTimeAverage = m_FrameTimeAverage * 0.9f + m_RenderFrameTime * 0.1f;
 
 				// keep the overflow time - it's used to make sure the gfx refreshrate is reached
-				int64_t AdditionalTime = g_Config.m_GfxRefreshRate ? ((Now - LastRenderTime) - (time_freq() / (int64_t)g_Config.m_GfxRefreshRate)) : 0;
+				int64_t AdditionalTime = GfxRefreshRate ? ((Now - LastRenderTime) - (time_freq() / (int64_t)GfxRefreshRate)) : 0;
 				// if the value is over the frametime of a 60 fps frame, reset the additional time (drop the frames, that are lost already)
 				if(AdditionalTime > (time_freq() / 60))
 					AdditionalTime = (time_freq() / 60);
@@ -3339,7 +3356,7 @@ void CClient::Run()
 			else if(!IsRenderActive)
 			{
 				// if the client does not render, it should reset its render time to a time where it would render the first frame, when it wakes up again
-				LastRenderTime = g_Config.m_GfxRefreshRate ? (Now - (time_freq() / (int64_t)g_Config.m_GfxRefreshRate)) : Now;
+				LastRenderTime = GfxRefreshRate ? (Now - (time_freq() / (int64_t)GfxRefreshRate)) : Now;
 			}
 		}
 
@@ -3356,15 +3373,24 @@ void CClient::Run()
 		auto Now = time_get_nanoseconds();
 		decltype(Now) SleepTimeInNanoSeconds{0};
 		bool Slept = false;
-		if(g_Config.m_ClRefreshRateInactive && !m_pGraphics->WindowActive())
+		int ActiveRefreshRate = g_Config.m_ClRefreshRate;
+		int InactiveRefreshRate = g_Config.m_ClRefreshRateInactive;
+		if(LimitDemoFps)
 		{
-			SleepTimeInNanoSeconds = (std::chrono::nanoseconds(1s) / (int64_t)g_Config.m_ClRefreshRateInactive) - (Now - LastTime);
+			if(ActiveRefreshRate == 0 || ActiveRefreshRate > 60)
+				ActiveRefreshRate = 60;
+			if(InactiveRefreshRate == 0 || InactiveRefreshRate > 60)
+				InactiveRefreshRate = 60;
+		}
+		if(InactiveRefreshRate && !m_pGraphics->WindowActive())
+		{
+			SleepTimeInNanoSeconds = (std::chrono::nanoseconds(1s) / (int64_t)InactiveRefreshRate) - (Now - LastTime);
 			std::this_thread::sleep_for(SleepTimeInNanoSeconds);
 			Slept = true;
 		}
-		else if(g_Config.m_ClRefreshRate)
+		else if(ActiveRefreshRate)
 		{
-			SleepTimeInNanoSeconds = (std::chrono::nanoseconds(1s) / (int64_t)g_Config.m_ClRefreshRate) - (Now - LastTime);
+			SleepTimeInNanoSeconds = (std::chrono::nanoseconds(1s) / (int64_t)ActiveRefreshRate) - (Now - LastTime);
 			auto SleepTimeInNanoSecondsInner = SleepTimeInNanoSeconds;
 			auto NowInner = Now;
 			while(std::chrono::duration_cast<std::chrono::microseconds>(SleepTimeInNanoSecondsInner) > 0us)
