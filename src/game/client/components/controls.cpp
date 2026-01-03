@@ -211,8 +211,12 @@ int CControls::SnapInput(int *pData)
 				const vec2 Delta = TargetPos - CurrentPos;
 				const float PositionThreshold = 24.0f;
 				if(std::abs(Delta.x) > PositionThreshold)
-					Input.m_Direction = Delta.x > 0.0f ? 1 : -1;
-				if(length(Delta) > PositionThreshold * 2.0f)
+				{
+					const int DesiredDirection = Delta.x > 0.0f ? 1 : -1;
+					if(Input.m_Direction == 0 || Input.m_Direction == DesiredDirection)
+						Input.m_Direction = DesiredDirection;
+				}
+				if(length(Delta) > PositionThreshold * 2.0f && Input.m_TargetX == 0 && Input.m_TargetY == 0 && Input.m_Hook == 0 && Input.m_Fire == 0)
 				{
 					const int TargetMax = 2000;
 					Input.m_TargetX = std::clamp((int)Delta.x, -TargetMax, TargetMax);
