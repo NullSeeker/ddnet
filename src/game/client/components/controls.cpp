@@ -42,6 +42,8 @@ void CControls::OnReset()
 	m_LastSendTime = 0;
 	StopTasPlayback();
 	StopTasRecording(false);
+	m_TasRecordSlowFactor = 1;
+	m_TasHasPositionData = false;
 }
 
 void CControls::ResetInput(int Dummy)
@@ -174,7 +176,7 @@ void CControls::OnConsoleInit()
 		Console()->Register("+prevweapon", "", CFGFLAG_CLIENT, ConKeyInputNextPrevWeapon, &s_Set, "Switch to previous weapon");
 	}
 
-	Console()->Register("tas_record", "?s[filename]", CFGFLAG_CLIENT, ConTasRecord, this, "Record TAS inputs to tas/<filename>.tas");
+	Console()->Register("tas_record", "?s[filename] ?i[slow]", CFGFLAG_CLIENT, ConTasRecord, this, "Record TAS inputs to tas/<filename>.tas with optional slow factor");
 	Console()->Register("tas_play", "s[filename]", CFGFLAG_CLIENT, ConTasPlay, this, "Play TAS inputs from tas/<filename>.tas");
 	Console()->Register("tas_stop", "", CFGFLAG_CLIENT, ConTasStop, this, "Stop TAS recording/playback");
 }
@@ -201,12 +203,35 @@ int CControls::SnapInput(int *pData)
 		}
 		else
 		{
-			const CNetObj_PlayerInput &Input = m_vTasInputs[m_TasPlaybackIndex++];
+			const CTasInput &TasInput = m_vTasInputs[m_TasPlaybackIndex];
+			CNetObj_PlayerInput Input = TasInput.m_Input;
+			if(TasInput.m_HasPosition && GameClient()->m_Snap.m_pLocalCharacter)
+			{
+				const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
+				const vec2 TargetPos((float)TasInput.m_Position.x, (float)TasInput.m_Position.y);
+				const vec2 Delta = TargetPos - CurrentPos;
+				const float PositionThreshold = 24.0f;
+				if(std::abs(Delta.x) > PositionThreshold)
+					Input.m_Direction = Delta.x > 0.0f ? 1 : -1;
+				if(length(Delta) > PositionThreshold * 2.0f)
+				{
+					const int TargetMax = 2000;
+					Input.m_TargetX = std::clamp((int)Delta.x, -TargetMax, TargetMax);
+					Input.m_TargetY = std::clamp((int)Delta.y, -TargetMax, TargetMax);
+				}
+			}
+
 			m_aInputData[g_Config.m_ClDummy] = Input;
 			m_aLastData[g_Config.m_ClDummy] = Input;
 			m_aMousePos[g_Config.m_ClDummy] = vec2(Input.m_TargetX, Input.m_TargetY);
 			m_LastSendTime = time_get();
 			mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
+			m_TasPlaybackSlowCounter++;
+			if(m_TasPlaybackSlowCounter >= m_TasPlaybackSlowFactor)
+			{
+				m_TasPlaybackSlowCounter = 0;
+				m_TasPlaybackIndex++;
+			}
 			return sizeof(m_aInputData[0]);
 		}
 	}
@@ -358,7 +383,15 @@ int CControls::SnapInput(int *pData)
 
 	if(m_TasRecording)
 	{
-		m_vTasInputs.push_back(m_aInputData[g_Config.m_ClDummy]);
+		CTasInput TasInput;
+		TasInput.m_Input = m_aInputData[g_Config.m_ClDummy];
+		if(GameClient()->m_Snap.m_pLocalCharacter)
+		{
+			TasInput.m_Position = ivec2(GameClient()->m_Snap.m_pLocalCharacter->m_X, GameClient()->m_Snap.m_pLocalCharacter->m_Y);
+			TasInput.m_HasPosition = true;
+			m_TasHasPositionData = true;
+		}
+		m_vTasInputs.push_back(TasInput);
 	}
 
 	if(!Send)
@@ -383,7 +416,12 @@ void CControls::ConTasRecord(IConsole::IResult *pResult, void *pUserData)
 		str_timestamp_format(aTimestamp, sizeof(aTimestamp), FORMAT_NOSPACE);
 		str_format(aName, sizeof(aName), "tas_%s", aTimestamp);
 	}
-	pControls->StartTasRecording(aName);
+	int SlowFactor = 1;
+	if(pResult->NumArguments() > 1)
+	{
+		SlowFactor = maximum(1, pResult->GetInteger(1));
+	}
+	pControls->StartTasRecording(aName, SlowFactor);
 }
 
 void CControls::ConTasPlay(IConsole::IResult *pResult, void *pUserData)
@@ -399,7 +437,7 @@ void CControls::ConTasStop(IConsole::IResult *pResult, void *pUserData)
 	pControls->StopTasRecording(true);
 }
 
-void CControls::StartTasRecording(const char *pFilename)
+void CControls::StartTasRecording(const char *pFilename, int SlowFactor)
 {
 	if(m_TasRecording)
 	{
@@ -422,6 +460,8 @@ void CControls::StartTasRecording(const char *pFilename)
 	Storage()->CreateFolder("tas", IStorage::TYPE_SAVE);
 	str_format(m_aTasFilename, sizeof(m_aTasFilename), "tas/%s.tas", aName);
 	m_vTasInputs.clear();
+	m_TasHasPositionData = false;
+	m_TasRecordSlowFactor = maximum(1, SlowFactor);
 	m_TasRecording = true;
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS recording.");
 }
@@ -447,6 +487,8 @@ void CControls::StopTasRecording(bool SaveToFile)
 	m_TasRecording = false;
 	m_vTasInputs.clear();
 	m_aTasFilename[0] = '\0';
+	m_TasRecordSlowFactor = 1;
+	m_TasHasPositionData = false;
 }
 
 void CControls::StartTasPlayback(const char *pFilename)
@@ -475,6 +517,7 @@ void CControls::StartTasPlayback(const char *pFilename)
 		return;
 
 	m_TasPlaybackIndex = 0;
+	m_TasPlaybackSlowCounter = 0;
 	m_TasPlaying = true;
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS playback.");
 }
@@ -486,6 +529,8 @@ void CControls::StopTasPlayback()
 
 	m_TasPlaying = false;
 	m_TasPlaybackIndex = 0;
+	m_TasPlaybackSlowCounter = 0;
+	m_TasPlaybackSlowFactor = 1;
 	m_vTasInputs.clear();
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Stopped TAS playback.");
 }
@@ -496,23 +541,50 @@ bool CControls::SaveTasFile(const char *pFilename) const
 	if(!File)
 		return false;
 
-	const char *pHeader = "TAS1\n";
+	const bool UseExtended = m_TasHasPositionData || m_TasRecordSlowFactor > 1;
+	const char *pHeader = UseExtended ? "TAS2\n" : "TAS1\n";
 	io_write(File, pHeader, str_length(pHeader));
+	if(UseExtended && m_TasRecordSlowFactor > 1)
+	{
+		char aSlowLine[64];
+		str_format(aSlowLine, sizeof(aSlowLine), "SLOW %d\n", m_TasRecordSlowFactor);
+		io_write(File, aSlowLine, str_length(aSlowLine));
+	}
 
 	char aLine[256];
 	for(const auto &Input : m_vTasInputs)
 	{
-		str_format(aLine, sizeof(aLine), "%d %d %d %d %d %d %d %d %d %d\n",
-			Input.m_Direction,
-			Input.m_Jump,
-			Input.m_Fire,
-			Input.m_Hook,
-			Input.m_WantedWeapon,
-			Input.m_NextWeapon,
-			Input.m_PrevWeapon,
-			Input.m_TargetX,
-			Input.m_TargetY,
-			Input.m_PlayerFlags);
+		if(UseExtended)
+		{
+			str_format(aLine, sizeof(aLine), "%d %d %d %d %d %d %d %d %d %d %d %d %d\n",
+				Input.m_Input.m_Direction,
+				Input.m_Input.m_Jump,
+				Input.m_Input.m_Fire,
+				Input.m_Input.m_Hook,
+				Input.m_Input.m_WantedWeapon,
+				Input.m_Input.m_NextWeapon,
+				Input.m_Input.m_PrevWeapon,
+				Input.m_Input.m_TargetX,
+				Input.m_Input.m_TargetY,
+				Input.m_Input.m_PlayerFlags,
+				Input.m_Position.x,
+				Input.m_Position.y,
+				Input.m_HasPosition ? 1 : 0);
+		}
+		else
+		{
+			str_format(aLine, sizeof(aLine), "%d %d %d %d %d %d %d %d %d %d\n",
+				Input.m_Input.m_Direction,
+				Input.m_Input.m_Jump,
+				Input.m_Input.m_Fire,
+				Input.m_Input.m_Hook,
+				Input.m_Input.m_WantedWeapon,
+				Input.m_Input.m_NextWeapon,
+				Input.m_Input.m_PrevWeapon,
+				Input.m_Input.m_TargetX,
+				Input.m_Input.m_TargetY,
+				Input.m_Input.m_PlayerFlags);
+		}
 		io_write(File, aLine, str_length(aLine));
 	}
 
@@ -532,7 +604,9 @@ bool CControls::LoadTasFile(const char *pFilename)
 	}
 
 	m_vTasInputs.clear();
+	m_TasPlaybackSlowFactor = 1;
 	bool HeaderHandled = false;
+	bool Extended = false;
 	while(const char *pLine = LineReader.Get())
 	{
 		if(pLine[0] == '\0' || pLine[0] == '#')
@@ -541,12 +615,31 @@ bool CControls::LoadTasFile(const char *pFilename)
 		if(!HeaderHandled)
 		{
 			HeaderHandled = true;
+			if(str_comp(pLine, "TAS2") == 0)
+			{
+				Extended = true;
+				continue;
+			}
 			if(str_comp(pLine, "TAS1") == 0)
 				continue;
 		}
 
-		CNetObj_PlayerInput Input;
-		if(!ParseTasLine(pLine, Input))
+		if(Extended && str_startswith_nocase(pLine, "SLOW"))
+		{
+			char aToken[64];
+			const char *pCursor = str_next_token(pLine, " \t", aToken, sizeof(aToken));
+			if(pCursor != nullptr)
+			{
+				pCursor = str_next_token(pCursor, " \t", aToken, sizeof(aToken));
+				int SlowFactor = 1;
+				if(aToken[0] != '\0' && str_toint(aToken, &SlowFactor))
+					m_TasPlaybackSlowFactor = maximum(1, SlowFactor);
+			}
+			continue;
+		}
+
+		CTasInput Input;
+		if(!ParseTasLine(pLine, Input, Extended))
 			continue;
 		m_vTasInputs.push_back(Input);
 	}
@@ -560,12 +653,13 @@ bool CControls::LoadTasFile(const char *pFilename)
 	return true;
 }
 
-bool CControls::ParseTasLine(const char *pLine, CNetObj_PlayerInput &Input)
+bool CControls::ParseTasLine(const char *pLine, CTasInput &Input, bool Extended)
 {
 	const char *pCursor = pLine;
 	char aToken[64];
-	int aValues[10];
-	for(int i = 0; i < 10; i++)
+	const int ValueCount = Extended ? 13 : 10;
+	int aValues[13];
+	for(int i = 0; i < ValueCount; i++)
 	{
 		if(!pCursor)
 			return false;
@@ -577,16 +671,21 @@ bool CControls::ParseTasLine(const char *pLine, CNetObj_PlayerInput &Input)
 	}
 
 	mem_zero(&Input, sizeof(Input));
-	Input.m_Direction = aValues[0];
-	Input.m_Jump = aValues[1];
-	Input.m_Fire = aValues[2];
-	Input.m_Hook = aValues[3];
-	Input.m_WantedWeapon = aValues[4];
-	Input.m_NextWeapon = aValues[5];
-	Input.m_PrevWeapon = aValues[6];
-	Input.m_TargetX = aValues[7];
-	Input.m_TargetY = aValues[8];
-	Input.m_PlayerFlags = aValues[9];
+	Input.m_Input.m_Direction = aValues[0];
+	Input.m_Input.m_Jump = aValues[1];
+	Input.m_Input.m_Fire = aValues[2];
+	Input.m_Input.m_Hook = aValues[3];
+	Input.m_Input.m_WantedWeapon = aValues[4];
+	Input.m_Input.m_NextWeapon = aValues[5];
+	Input.m_Input.m_PrevWeapon = aValues[6];
+	Input.m_Input.m_TargetX = aValues[7];
+	Input.m_Input.m_TargetY = aValues[8];
+	Input.m_Input.m_PlayerFlags = aValues[9];
+	if(Extended)
+	{
+		Input.m_Position = ivec2(aValues[10], aValues[11]);
+		Input.m_HasPosition = aValues[12] != 0;
+	}
 	return true;
 }
 

@@ -58,6 +58,13 @@ public:
 	void ResetInput(int Dummy);
 
 private:
+	struct CTasInput
+	{
+		CNetObj_PlayerInput m_Input{};
+		ivec2 m_Position = ivec2(0, 0);
+		bool m_HasPosition = false;
+	};
+
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
@@ -67,18 +74,22 @@ private:
 	static void ConTasPlay(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasStop(IConsole::IResult *pResult, void *pUserData);
 
-	void StartTasRecording(const char *pFilename);
+	void StartTasRecording(const char *pFilename, int SlowFactor);
 	void StopTasRecording(bool SaveToFile);
 	void StartTasPlayback(const char *pFilename);
 	void StopTasPlayback();
 	bool SaveTasFile(const char *pFilename) const;
 	bool LoadTasFile(const char *pFilename);
-	static bool ParseTasLine(const char *pLine, CNetObj_PlayerInput &Input);
+	static bool ParseTasLine(const char *pLine, CTasInput &Input, bool Extended);
 
 	bool m_TasRecording = false;
 	bool m_TasPlaying = false;
 	size_t m_TasPlaybackIndex = 0;
-	std::vector<CNetObj_PlayerInput> m_vTasInputs;
+	int m_TasPlaybackSlowFactor = 1;
+	int m_TasPlaybackSlowCounter = 0;
+	int m_TasRecordSlowFactor = 1;
+	bool m_TasHasPositionData = false;
+	std::vector<CTasInput> m_vTasInputs;
 	char m_aTasFilename[IO_MAX_PATH_LENGTH] = {};
 };
 #endif
