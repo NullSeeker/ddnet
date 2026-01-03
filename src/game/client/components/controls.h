@@ -81,6 +81,7 @@ private:
 	bool SaveTasFile(const char *pFilename) const;
 	bool LoadTasFile(const char *pFilename);
 	static bool ParseTasLine(const char *pLine, CTasInput &Input, bool Extended);
+	bool TryResyncTasPlayback(const ivec2 &CurrentPosition, float Threshold);
 
 	bool m_TasRecording = false;
 	bool m_TasPlaying = false;
