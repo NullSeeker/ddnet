@@ -205,43 +205,57 @@ int CControls::SnapInput(int *pData)
 		}
 		else
 		{
-			const CTasInput &TasInput = m_vTasInputs[m_TasPlaybackIndex];
-			CNetObj_PlayerInput Input = TasInput.m_Input;
+			const CTasInput *pTasInput = &m_vTasInputs[m_TasPlaybackIndex];
 			if(m_TasPlaybackHasStartPosition && !m_TasPlaybackCheckedStart && GameClient()->m_Snap.m_pLocalCharacter)
 			{
-				const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
+				const ivec2 CurrentPos(GameClient()->m_Snap.m_pLocalCharacter->m_X, GameClient()->m_Snap.m_pLocalCharacter->m_Y);
 				const float StartPositionThreshold = 8.0f;
 				const vec2 TargetPos((float)m_TasPlaybackStartPosition.x, (float)m_TasPlaybackStartPosition.y);
-				const float PositionError = length(TargetPos - CurrentPos);
+				const vec2 CurrentPosFloat((float)CurrentPos.x, (float)CurrentPos.y);
+				const float PositionError = length(TargetPos - CurrentPosFloat);
 				if(PositionError > StartPositionThreshold)
 				{
 					char aMsg[128];
-					str_format(aMsg, sizeof(aMsg), "TAS playback start mismatch (expected %d,%d got %.2f,%.2f). Stopping playback.",
+					str_format(aMsg, sizeof(aMsg), "TAS playback start mismatch (expected %d,%d got %d,%d). Attempting resync.",
 						m_TasPlaybackStartPosition.x, m_TasPlaybackStartPosition.y, CurrentPos.x, CurrentPos.y);
 					Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
-					StopTasPlayback();
-					return 0;
+					if(!TryResyncTasPlayback(CurrentPos, StartPositionThreshold))
+					{
+						Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS playback start resync failed; continuing playback.");
+					}
+					else
+					{
+						pTasInput = &m_vTasInputs[m_TasPlaybackIndex];
+					}
 				}
 				m_TasPlaybackCheckedStart = true;
 			}
 
-			if(TasInput.m_HasPosition && m_TasPlaybackCheckedStart && GameClient()->m_Snap.m_pLocalCharacter)
+			if(pTasInput->m_HasPosition && m_TasPlaybackCheckedStart && GameClient()->m_Snap.m_pLocalCharacter)
 			{
-				const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
-				const vec2 TargetPos((float)TasInput.m_Position.x, (float)TasInput.m_Position.y);
+				const ivec2 CurrentPos(GameClient()->m_Snap.m_pLocalCharacter->m_X, GameClient()->m_Snap.m_pLocalCharacter->m_Y);
+				const vec2 TargetPos((float)pTasInput->m_Position.x, (float)pTasInput->m_Position.y);
 				const float DesyncPositionThreshold = 16.0f;
-				const float PositionError = length(TargetPos - CurrentPos);
+				const vec2 CurrentPosFloat((float)CurrentPos.x, (float)CurrentPos.y);
+				const float PositionError = length(TargetPos - CurrentPosFloat);
 				if(PositionError > DesyncPositionThreshold)
 				{
 					char aMsg[128];
-					str_format(aMsg, sizeof(aMsg), "TAS playback desync at frame %zu (expected %d,%d got %.2f,%.2f). Stopping playback.",
-						m_TasPlaybackIndex, TasInput.m_Position.x, TasInput.m_Position.y, CurrentPos.x, CurrentPos.y);
+					str_format(aMsg, sizeof(aMsg), "TAS playback desync at frame %zu (expected %d,%d got %d,%d). Attempting resync.",
+						m_TasPlaybackIndex, pTasInput->m_Position.x, pTasInput->m_Position.y, CurrentPos.x, CurrentPos.y);
 					Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
-					StopTasPlayback();
-					return 0;
+					if(!TryResyncTasPlayback(CurrentPos, DesyncPositionThreshold))
+					{
+						Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS playback resync failed; continuing playback.");
+					}
+					else
+					{
+						pTasInput = &m_vTasInputs[m_TasPlaybackIndex];
+					}
 				}
 			}
 
+			CNetObj_PlayerInput Input = pTasInput->m_Input;
 			m_aInputData[g_Config.m_ClDummy] = Input;
 			m_aLastData[g_Config.m_ClDummy] = Input;
 			m_aMousePos[g_Config.m_ClDummy] = vec2(Input.m_TargetX, Input.m_TargetY);
@@ -421,6 +435,50 @@ int CControls::SnapInput(int *pData)
 	m_LastSendTime = time_get();
 	mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
 	return sizeof(m_aInputData[0]);
+}
+
+bool CControls::TryResyncTasPlayback(const ivec2 &CurrentPosition, float Threshold)
+{
+	if(!m_TasHasPositionData || m_vTasInputs.empty())
+		return false;
+
+	const size_t MaxLookback = 10;
+	const size_t MaxLookahead = 200;
+	const size_t StartIndex = m_TasPlaybackIndex > MaxLookback ? m_TasPlaybackIndex - MaxLookback : 0;
+	const size_t EndIndex = minimum(m_vTasInputs.size(), m_TasPlaybackIndex + MaxLookahead + 1);
+	const vec2 CurrentPos((float)CurrentPosition.x, (float)CurrentPosition.y);
+	const float MaxError = Threshold;
+	bool Found = false;
+	size_t BestIndex = m_TasPlaybackIndex;
+	float BestError = MaxError;
+
+	for(size_t i = StartIndex; i < EndIndex; ++i)
+	{
+		if(!m_vTasInputs[i].m_HasPosition)
+			continue;
+		const vec2 TargetPos((float)m_vTasInputs[i].m_Position.x, (float)m_vTasInputs[i].m_Position.y);
+		const float Error = length(TargetPos - CurrentPos);
+		if(Error <= BestError)
+		{
+			BestError = Error;
+			BestIndex = i;
+			Found = true;
+			if(Error == 0.0f)
+				break;
+		}
+	}
+
+	if(!Found)
+		return false;
+
+	if(BestIndex != m_TasPlaybackIndex)
+	{
+		char aMsg[128];
+		str_format(aMsg, sizeof(aMsg), "TAS playback resynced to frame %zu (pos %d,%d).", BestIndex, CurrentPosition.x, CurrentPosition.y);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
+		m_TasPlaybackIndex = BestIndex;
+	}
+	return true;
 }
 
 void CControls::ConTasRecord(IConsole::IResult *pResult, void *pUserData)
