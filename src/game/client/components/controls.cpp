@@ -43,6 +43,9 @@ void CControls::OnReset()
 	StopTasPlayback();
 	StopTasRecording(false);
 	m_TasHasPositionData = false;
+	m_TasPlaybackCheckedStart = false;
+	m_TasPlaybackHasStartPosition = false;
+	m_TasPlaybackStartPosition = ivec2(0, 0);
 }
 
 void CControls::ResetInput(int Dummy)
@@ -204,23 +207,38 @@ int CControls::SnapInput(int *pData)
 		{
 			const CTasInput &TasInput = m_vTasInputs[m_TasPlaybackIndex];
 			CNetObj_PlayerInput Input = TasInput.m_Input;
-			if(TasInput.m_HasPosition && GameClient()->m_Snap.m_pLocalCharacter)
+			if(m_TasPlaybackHasStartPosition && !m_TasPlaybackCheckedStart && GameClient()->m_Snap.m_pLocalCharacter)
+			{
+				const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
+				const float StartPositionThreshold = 8.0f;
+				const vec2 TargetPos((float)m_TasPlaybackStartPosition.x, (float)m_TasPlaybackStartPosition.y);
+				const float PositionError = length(TargetPos - CurrentPos);
+				if(PositionError > StartPositionThreshold)
+				{
+					char aMsg[128];
+					str_format(aMsg, sizeof(aMsg), "TAS playback start mismatch (expected %d,%d got %.2f,%.2f). Stopping playback.",
+						m_TasPlaybackStartPosition.x, m_TasPlaybackStartPosition.y, CurrentPos.x, CurrentPos.y);
+					Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
+					StopTasPlayback();
+					return 0;
+				}
+				m_TasPlaybackCheckedStart = true;
+			}
+
+			if(TasInput.m_HasPosition && m_TasPlaybackCheckedStart && GameClient()->m_Snap.m_pLocalCharacter)
 			{
 				const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
 				const vec2 TargetPos((float)TasInput.m_Position.x, (float)TasInput.m_Position.y);
-				const vec2 Delta = TargetPos - CurrentPos;
-				const float PositionThreshold = 24.0f;
-				if(std::abs(Delta.x) > PositionThreshold)
+				const float DesyncPositionThreshold = 16.0f;
+				const float PositionError = length(TargetPos - CurrentPos);
+				if(PositionError > DesyncPositionThreshold)
 				{
-					const int DesiredDirection = Delta.x > 0.0f ? 1 : -1;
-					if(Input.m_Direction == 0 || Input.m_Direction == DesiredDirection)
-						Input.m_Direction = DesiredDirection;
-				}
-				if(length(Delta) > PositionThreshold * 2.0f && Input.m_TargetX == 0 && Input.m_TargetY == 0 && Input.m_Hook == 0 && Input.m_Fire == 0)
-				{
-					const int TargetMax = 2000;
-					Input.m_TargetX = std::clamp((int)Delta.x, -TargetMax, TargetMax);
-					Input.m_TargetY = std::clamp((int)Delta.y, -TargetMax, TargetMax);
+					char aMsg[128];
+					str_format(aMsg, sizeof(aMsg), "TAS playback desync at frame %zu (expected %d,%d got %.2f,%.2f). Stopping playback.",
+						m_TasPlaybackIndex, TasInput.m_Position.x, TasInput.m_Position.y, CurrentPos.x, CurrentPos.y);
+					Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
+					StopTasPlayback();
+					return 0;
 				}
 			}
 
@@ -518,6 +536,14 @@ void CControls::StartTasPlayback(const char *pFilename)
 
 	m_TasPlaybackIndex = 0;
 	m_TasPlaybackSlowCounter = 0;
+	m_TasPlaybackCheckedStart = false;
+	m_TasPlaybackHasStartPosition = false;
+	m_TasPlaybackStartPosition = ivec2(0, 0);
+	if(!m_vTasInputs.empty() && m_vTasInputs.front().m_HasPosition)
+	{
+		m_TasPlaybackHasStartPosition = true;
+		m_TasPlaybackStartPosition = m_vTasInputs.front().m_Position;
+	}
 	m_TasPlaying = true;
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS playback.");
 }
@@ -531,6 +557,9 @@ void CControls::StopTasPlayback()
 	m_TasPlaybackIndex = 0;
 	m_TasPlaybackSlowCounter = 0;
 	m_TasPlaybackSlowFactor = 1;
+	m_TasPlaybackCheckedStart = false;
+	m_TasPlaybackHasStartPosition = false;
+	m_TasPlaybackStartPosition = ivec2(0, 0);
 	m_vTasInputs.clear();
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Stopped TAS playback.");
 }
