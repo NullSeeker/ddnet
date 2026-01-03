@@ -74,7 +74,7 @@ private:
 	static void ConTasPlay(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasStop(IConsole::IResult *pResult, void *pUserData);
 
-	void StartTasRecording(const char *pFilename, int SlowFactor);
+	void StartTasRecording(const char *pFilename);
 	void StopTasRecording(bool SaveToFile);
 	void StartTasPlayback(const char *pFilename);
 	void StopTasPlayback();
@@ -87,7 +87,6 @@ private:
 	size_t m_TasPlaybackIndex = 0;
 	int m_TasPlaybackSlowFactor = 1;
 	int m_TasPlaybackSlowCounter = 0;
-	int m_TasRecordSlowFactor = 1;
 	bool m_TasHasPositionData = false;
 	std::vector<CTasInput> m_vTasInputs;
 	char m_aTasFilename[IO_MAX_PATH_LENGTH] = {};

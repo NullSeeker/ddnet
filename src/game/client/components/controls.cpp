@@ -42,7 +42,6 @@ void CControls::OnReset()
 	m_LastSendTime = 0;
 	StopTasPlayback();
 	StopTasRecording(false);
-	m_TasRecordSlowFactor = 1;
 	m_TasHasPositionData = false;
 }
 
@@ -176,7 +175,7 @@ void CControls::OnConsoleInit()
 		Console()->Register("+prevweapon", "", CFGFLAG_CLIENT, ConKeyInputNextPrevWeapon, &s_Set, "Switch to previous weapon");
 	}
 
-	Console()->Register("tas_record", "?s[filename] ?i[slow]", CFGFLAG_CLIENT, ConTasRecord, this, "Record TAS inputs to tas/<filename>.tas with optional slow factor");
+	Console()->Register("tas_record", "?s[filename]", CFGFLAG_CLIENT, ConTasRecord, this, "Record TAS inputs to tas/<filename>.tas");
 	Console()->Register("tas_play", "s[filename]", CFGFLAG_CLIENT, ConTasPlay, this, "Play TAS inputs from tas/<filename>.tas");
 	Console()->Register("tas_stop", "", CFGFLAG_CLIENT, ConTasStop, this, "Stop TAS recording/playback");
 }
@@ -416,12 +415,11 @@ void CControls::ConTasRecord(IConsole::IResult *pResult, void *pUserData)
 		str_timestamp_format(aTimestamp, sizeof(aTimestamp), FORMAT_NOSPACE);
 		str_format(aName, sizeof(aName), "tas_%s", aTimestamp);
 	}
-	int SlowFactor = 1;
 	if(pResult->NumArguments() > 1)
 	{
-		SlowFactor = maximum(1, pResult->GetInteger(1));
+		pControls->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Slow TAS recording mode is no longer supported; recording at full speed.");
 	}
-	pControls->StartTasRecording(aName, SlowFactor);
+	pControls->StartTasRecording(aName);
 }
 
 void CControls::ConTasPlay(IConsole::IResult *pResult, void *pUserData)
@@ -437,7 +435,7 @@ void CControls::ConTasStop(IConsole::IResult *pResult, void *pUserData)
 	pControls->StopTasRecording(true);
 }
 
-void CControls::StartTasRecording(const char *pFilename, int SlowFactor)
+void CControls::StartTasRecording(const char *pFilename)
 {
 	if(m_TasRecording)
 	{
@@ -461,7 +459,6 @@ void CControls::StartTasRecording(const char *pFilename, int SlowFactor)
 	str_format(m_aTasFilename, sizeof(m_aTasFilename), "tas/%s.tas", aName);
 	m_vTasInputs.clear();
 	m_TasHasPositionData = false;
-	m_TasRecordSlowFactor = maximum(1, SlowFactor);
 	m_TasRecording = true;
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS recording.");
 }
@@ -487,7 +484,6 @@ void CControls::StopTasRecording(bool SaveToFile)
 	m_TasRecording = false;
 	m_vTasInputs.clear();
 	m_aTasFilename[0] = '\0';
-	m_TasRecordSlowFactor = 1;
 	m_TasHasPositionData = false;
 }
 
@@ -541,15 +537,9 @@ bool CControls::SaveTasFile(const char *pFilename) const
 	if(!File)
 		return false;
 
-	const bool UseExtended = m_TasHasPositionData || m_TasRecordSlowFactor > 1;
+	const bool UseExtended = m_TasHasPositionData;
 	const char *pHeader = UseExtended ? "TAS2\n" : "TAS1\n";
 	io_write(File, pHeader, str_length(pHeader));
-	if(UseExtended && m_TasRecordSlowFactor > 1)
-	{
-		char aSlowLine[64];
-		str_format(aSlowLine, sizeof(aSlowLine), "SLOW %d\n", m_TasRecordSlowFactor);
-		io_write(File, aSlowLine, str_length(aSlowLine));
-	}
 
 	char aLine[256];
 	for(const auto &Input : m_vTasInputs)
