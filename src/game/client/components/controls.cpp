@@ -670,7 +670,7 @@ bool CControls::ParseTasLine(const char *pLine, CTasInput &Input, bool Extended)
 			return false;
 	}
 
-	mem_zero(&Input, sizeof(Input));
+	Input = CTasInput{};
 	Input.m_Input.m_Direction = aValues[0];
 	Input.m_Input.m_Jump = aValues[1];
 	Input.m_Input.m_Fire = aValues[2];
