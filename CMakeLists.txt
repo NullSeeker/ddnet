@@ -2438,6 +2438,8 @@ if(CLIENT)
     components/spectator.h
     components/statboard.cpp
     components/statboard.h
+    components/tas_player.cpp
+    components/tas_player.h
     components/tooltips.cpp
     components/tooltips.h
     components/touch_controls.cpp
