@@ -486,23 +486,6 @@ void CControls::UpdateTasStartState()
 		m_TasLastRecordedTick = -1;
 		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS recording after respawn.");
 	}
-
-	if(m_TasPlaybackPendingStart && Respawned)
-	{
-		m_TasPlaybackPendingStart = false;
-		m_TasPlaying = true;
-		m_TasPlaybackStartTick = Client()->PredGameTick(g_Config.m_ClDummy);
-		m_TasPlaybackIndex = 0;
-		m_TasPlaybackCheckedStart = false;
-		m_TasPlaybackHasStartPosition = false;
-		m_TasPlaybackStartPosition = ivec2(0, 0);
-		if(!m_vTasInputs.empty() && m_vTasInputs.front().m_HasPosition)
-		{
-			m_TasPlaybackHasStartPosition = true;
-			m_TasPlaybackStartPosition = m_vTasInputs.front().m_Position;
-		}
-		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS playback after respawn.");
-	}
 }
 
 bool CControls::TryResyncTasPlayback(const ivec2 &CurrentPosition, float Threshold, int CurrentPredTick)
@@ -657,7 +640,7 @@ void CControls::StopTasRecording(bool SaveToFile)
 
 void CControls::StartTasPlayback(const char *pFilename)
 {
-	if(m_TasPlaying || m_TasPlaybackPendingStart)
+	if(m_TasPlaying)
 	{
 		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Already playing TAS inputs.");
 		return;
@@ -689,11 +672,10 @@ void CControls::StartTasPlayback(const char *pFilename)
 		m_TasPlaybackHasStartPosition = true;
 		m_TasPlaybackStartPosition = m_vTasInputs.front().m_Position;
 	}
-	m_TasPlaying = false;
-	m_TasPlaybackPendingStart = true;
-	m_TasPlaybackStartTick = 0;
-	m_TasWasActive = GameClient()->m_Snap.m_pLocalCharacter != nullptr && !GameClient()->m_Snap.m_SpecInfo.m_Active;
-	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS playback armed; will start after respawn.");
+	m_TasPlaying = true;
+	m_TasPlaybackPendingStart = false;
+	m_TasPlaybackStartTick = Client()->PredGameTick(g_Config.m_ClDummy);
+	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS playback.");
 }
 
 void CControls::StopTasPlayback()
