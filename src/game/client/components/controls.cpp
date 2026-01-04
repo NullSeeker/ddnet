@@ -229,6 +229,10 @@ int CControls::SnapInput(int *pData)
 		m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)m_aMousePos[g_Config.m_ClDummy].x;
 		m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)m_aMousePos[g_Config.m_ClDummy].y;
 
+		// TAS playback hook: this is the final input before prediction/send.
+		if(GameClient()->m_TasPlayer.ApplyInput(m_aInputData[g_Config.m_ClDummy], Client()->GameTick(g_Config.m_ClDummy)))
+			Send = true;
+
 		// send once a second just to be sure
 		Send = Send || time_get() > m_LastSendTime + time_freq();
 	}
@@ -312,6 +316,10 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)(std::cos(t * 3) * 100.0f);
 		}
 #endif
+		// TAS playback hook: this is the final input before prediction/send.
+		if(GameClient()->m_TasPlayer.ApplyInput(m_aInputData[g_Config.m_ClDummy], Client()->GameTick(g_Config.m_ClDummy)))
+			Send = true;
+
 		// check if we need to send input
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Direction != m_aLastData[g_Config.m_ClDummy].m_Direction;
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Jump != m_aLastData[g_Config.m_ClDummy].m_Jump;

@@ -151,6 +151,7 @@ void CGameClient::OnConsoleInit()
 					      &m_Broadcast,
 					      &m_ImportantAlert,
 					      &m_DebugHud,
+					      &m_TasPlayer,
 					      &m_TouchControls,
 					      &m_Scoreboard,
 					      &m_Statboard,

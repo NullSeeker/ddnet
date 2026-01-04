@@ -67,6 +67,7 @@
 #include "components/statboard.h"
 #include "components/tooltips.h"
 #include "components/touch_controls.h"
+#include "components/tas_player.h"
 #include "components/voting.h"
 
 #include <vector>
@@ -155,6 +156,7 @@ public:
 	CHud m_Hud;
 	CImportantAlert m_ImportantAlert;
 	CDebugHud m_DebugHud;
+	CTasPlayer m_TasPlayer;
 	CControls m_Controls;
 	CEffects m_Effects;
 	CScoreboard m_Scoreboard;
