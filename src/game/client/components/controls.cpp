@@ -42,6 +42,12 @@ void CControls::OnReset()
 	m_LastSendTime = 0;
 	StopTasPlayback();
 	StopTasRecording(false);
+	m_TasRecordingPendingStart = false;
+	m_TasPlaybackPendingStart = false;
+	m_TasPlaybackStartTick = 0;
+	m_TasRecordStartTick = 0;
+	m_TasLastRecordedTick = -1;
+	m_TasWasActive = false;
 	m_TasHasPositionData = false;
 	m_TasPlaybackCheckedStart = false;
 	m_TasPlaybackHasStartPosition = false;
@@ -66,6 +72,14 @@ void CControls::OnPlayerDeath()
 {
 	for(int &AmmoCount : m_aAmmoCount)
 		AmmoCount = 0;
+	StopTasPlayback();
+	StopTasRecording(false);
+	m_TasRecordingPendingStart = false;
+	m_TasPlaybackPendingStart = false;
+	m_TasPlaybackStartTick = 0;
+	m_TasRecordStartTick = 0;
+	m_TasLastRecordedTick = -1;
+	m_TasWasActive = false;
 }
 
 struct CInputState
@@ -78,6 +92,9 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 {
 	CInputState *pState = (CInputState *)pUserData;
 
+	if(pState->m_pControls->m_TasPlaying)
+		return;
+
 	if(pState->m_pControls->GameClient()->m_GameInfo.m_BugDDRaceInput && pState->m_pControls->GameClient()->m_Snap.m_SpecInfo.m_Active)
 		return;
 
@@ -87,6 +104,9 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 {
 	CInputState *pState = (CInputState *)pUserData;
+
+	if(pState->m_pControls->m_TasPlaying)
+		return;
 
 	if((pState->m_pControls->GameClient()->m_GameInfo.m_BugDDRaceInput && pState->m_pControls->GameClient()->m_Snap.m_SpecInfo.m_Active) || pState->m_pControls->GameClient()->m_Spectator.IsActive())
 		return;
@@ -107,6 +127,8 @@ struct CInputSet
 void CControls::ConKeyInputSet(IConsole::IResult *pResult, void *pUserData)
 {
 	CInputSet *pSet = (CInputSet *)pUserData;
+	if(pSet->m_pControls->m_TasPlaying)
+		return;
 	if(pResult->GetInteger(0))
 	{
 		*pSet->m_apVariables[g_Config.m_ClDummy] = pSet->m_Value;
@@ -116,6 +138,8 @@ void CControls::ConKeyInputSet(IConsole::IResult *pResult, void *pUserData)
 void CControls::ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData)
 {
 	CInputSet *pSet = (CInputSet *)pUserData;
+	if(pSet->m_pControls->m_TasPlaying)
+		return;
 	ConKeyInputCounter(pResult, pSet);
 	pSet->m_pControls->m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = 0;
 }
@@ -197,14 +221,25 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 
 int CControls::SnapInput(int *pData)
 {
+	UpdateTasStartState();
+
 	if(m_TasPlaying)
 	{
-		if(m_TasPlaybackIndex >= m_vTasInputs.size())
+		const int PredTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		if(PredTick <= 0)
 		{
 			StopTasPlayback();
+			return 0;
+		}
+		const int PlaybackTick = PredTick - m_TasPlaybackStartTick;
+		if(PlaybackTick < 0 || static_cast<size_t>(PlaybackTick) >= m_vTasInputs.size())
+		{
+			StopTasPlayback();
+			return 0;
 		}
 		else
 		{
+			m_TasPlaybackIndex = static_cast<size_t>(PlaybackTick);
 			const CTasInput *pTasInput = &m_vTasInputs[m_TasPlaybackIndex];
 			if(m_TasPlaybackHasStartPosition && !m_TasPlaybackCheckedStart && GameClient()->m_Snap.m_pLocalCharacter)
 			{
@@ -219,12 +254,13 @@ int CControls::SnapInput(int *pData)
 					str_format(aMsg, sizeof(aMsg), "TAS playback start mismatch (expected %d,%d got %d,%d). Attempting resync.",
 						m_TasPlaybackStartPosition.x, m_TasPlaybackStartPosition.y, CurrentPos.x, CurrentPos.y);
 					Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
-					if(!TryResyncTasPlayback(CurrentPos, StartPositionThreshold))
+					if(!TryResyncTasPlayback(CurrentPos, StartPositionThreshold, PredTick))
 					{
 						Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS playback start resync failed; continuing playback.");
 					}
 					else
 					{
+						m_TasPlaybackIndex = static_cast<size_t>(PredTick - m_TasPlaybackStartTick);
 						pTasInput = &m_vTasInputs[m_TasPlaybackIndex];
 					}
 				}
@@ -244,12 +280,13 @@ int CControls::SnapInput(int *pData)
 					str_format(aMsg, sizeof(aMsg), "TAS playback desync at frame %zu (expected %d,%d got %d,%d). Attempting resync.",
 						m_TasPlaybackIndex, pTasInput->m_Position.x, pTasInput->m_Position.y, CurrentPos.x, CurrentPos.y);
 					Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
-					if(!TryResyncTasPlayback(CurrentPos, DesyncPositionThreshold))
+					if(!TryResyncTasPlayback(CurrentPos, DesyncPositionThreshold, PredTick))
 					{
 						Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS playback resync failed; continuing playback.");
 					}
 					else
 					{
+						m_TasPlaybackIndex = static_cast<size_t>(PredTick - m_TasPlaybackStartTick);
 						pTasInput = &m_vTasInputs[m_TasPlaybackIndex];
 					}
 				}
@@ -261,12 +298,6 @@ int CControls::SnapInput(int *pData)
 			m_aMousePos[g_Config.m_ClDummy] = vec2(Input.m_TargetX, Input.m_TargetY);
 			m_LastSendTime = time_get();
 			mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
-			m_TasPlaybackSlowCounter++;
-			if(m_TasPlaybackSlowCounter >= m_TasPlaybackSlowFactor)
-			{
-				m_TasPlaybackSlowCounter = 0;
-				m_TasPlaybackIndex++;
-			}
 			return sizeof(m_aInputData[0]);
 		}
 	}
@@ -418,7 +449,12 @@ int CControls::SnapInput(int *pData)
 
 	if(m_TasRecording)
 	{
+		const int PredTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		const int TasTick = PredTick - m_TasRecordStartTick;
+		if(TasTick >= 0 && TasTick != m_TasLastRecordedTick)
+		{
 		CTasInput TasInput;
+		TasInput.m_Tick = TasTick;
 		TasInput.m_Input = m_aInputData[g_Config.m_ClDummy];
 		if(GameClient()->m_Snap.m_pLocalCharacter)
 		{
@@ -427,6 +463,8 @@ int CControls::SnapInput(int *pData)
 			m_TasHasPositionData = true;
 		}
 		m_vTasInputs.push_back(TasInput);
+			m_TasLastRecordedTick = TasTick;
+		}
 	}
 
 	if(!Send)
@@ -437,7 +475,40 @@ int CControls::SnapInput(int *pData)
 	return sizeof(m_aInputData[0]);
 }
 
-bool CControls::TryResyncTasPlayback(const ivec2 &CurrentPosition, float Threshold)
+void CControls::UpdateTasStartState()
+{
+	const bool LocalActive = GameClient()->m_Snap.m_pLocalCharacter != nullptr && !GameClient()->m_Snap.m_SpecInfo.m_Active;
+	const bool Respawned = LocalActive && !m_TasWasActive;
+	m_TasWasActive = LocalActive;
+
+	if(m_TasRecordingPendingStart && Respawned)
+	{
+		m_TasRecordingPendingStart = false;
+		m_TasRecording = true;
+		m_TasRecordStartTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		m_TasLastRecordedTick = -1;
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS recording after respawn.");
+	}
+
+	if(m_TasPlaybackPendingStart && Respawned)
+	{
+		m_TasPlaybackPendingStart = false;
+		m_TasPlaying = true;
+		m_TasPlaybackStartTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		m_TasPlaybackIndex = 0;
+		m_TasPlaybackCheckedStart = false;
+		m_TasPlaybackHasStartPosition = false;
+		m_TasPlaybackStartPosition = ivec2(0, 0);
+		if(!m_vTasInputs.empty() && m_vTasInputs.front().m_HasPosition)
+		{
+			m_TasPlaybackHasStartPosition = true;
+			m_TasPlaybackStartPosition = m_vTasInputs.front().m_Position;
+		}
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS playback after respawn.");
+	}
+}
+
+bool CControls::TryResyncTasPlayback(const ivec2 &CurrentPosition, float Threshold, int CurrentPredTick)
 {
 	if(!m_TasHasPositionData || m_vTasInputs.empty())
 		return false;
@@ -477,6 +548,7 @@ bool CControls::TryResyncTasPlayback(const ivec2 &CurrentPosition, float Thresho
 		str_format(aMsg, sizeof(aMsg), "TAS playback resynced to frame %zu (pos %d,%d).", BestIndex, CurrentPosition.x, CurrentPosition.y);
 		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
 		m_TasPlaybackIndex = BestIndex;
+		m_TasPlaybackStartTick = CurrentPredTick - static_cast<int>(BestIndex);
 	}
 	return true;
 }
@@ -517,7 +589,7 @@ void CControls::ConTasStop(IConsole::IResult *pResult, void *pUserData)
 
 void CControls::StartTasRecording(const char *pFilename)
 {
-	if(m_TasRecording)
+	if(m_TasRecording || m_TasRecordingPendingStart)
 	{
 		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Already recording TAS inputs.");
 		return;
@@ -539,13 +611,17 @@ void CControls::StartTasRecording(const char *pFilename)
 	str_format(m_aTasFilename, sizeof(m_aTasFilename), "tas/%s.tas", aName);
 	m_vTasInputs.clear();
 	m_TasHasPositionData = false;
-	m_TasRecording = true;
-	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS recording.");
+	m_TasRecording = false;
+	m_TasRecordingPendingStart = true;
+	m_TasRecordStartTick = 0;
+	m_TasLastRecordedTick = -1;
+	m_TasWasActive = GameClient()->m_Snap.m_pLocalCharacter != nullptr && !GameClient()->m_Snap.m_SpecInfo.m_Active;
+	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS recording armed; will start after respawn.");
 }
 
 void CControls::StopTasRecording(bool SaveToFile)
 {
-	if(!m_TasRecording)
+	if(!m_TasRecording && !m_TasRecordingPendingStart)
 		return;
 
 	if(SaveToFile)
@@ -562,14 +638,17 @@ void CControls::StopTasRecording(bool SaveToFile)
 		}
 	}
 	m_TasRecording = false;
+	m_TasRecordingPendingStart = false;
 	m_vTasInputs.clear();
 	m_aTasFilename[0] = '\0';
 	m_TasHasPositionData = false;
+	m_TasRecordStartTick = 0;
+	m_TasLastRecordedTick = -1;
 }
 
 void CControls::StartTasPlayback(const char *pFilename)
 {
-	if(m_TasPlaying)
+	if(m_TasPlaying || m_TasPlaybackPendingStart)
 	{
 		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Already playing TAS inputs.");
 		return;
@@ -593,7 +672,6 @@ void CControls::StartTasPlayback(const char *pFilename)
 		return;
 
 	m_TasPlaybackIndex = 0;
-	m_TasPlaybackSlowCounter = 0;
 	m_TasPlaybackCheckedStart = false;
 	m_TasPlaybackHasStartPosition = false;
 	m_TasPlaybackStartPosition = ivec2(0, 0);
@@ -602,19 +680,22 @@ void CControls::StartTasPlayback(const char *pFilename)
 		m_TasPlaybackHasStartPosition = true;
 		m_TasPlaybackStartPosition = m_vTasInputs.front().m_Position;
 	}
-	m_TasPlaying = true;
-	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS playback.");
+	m_TasPlaying = false;
+	m_TasPlaybackPendingStart = true;
+	m_TasPlaybackStartTick = 0;
+	m_TasWasActive = GameClient()->m_Snap.m_pLocalCharacter != nullptr && !GameClient()->m_Snap.m_SpecInfo.m_Active;
+	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS playback armed; will start after respawn.");
 }
 
 void CControls::StopTasPlayback()
 {
-	if(!m_TasPlaying)
+	if(!m_TasPlaying && !m_TasPlaybackPendingStart)
 		return;
 
 	m_TasPlaying = false;
+	m_TasPlaybackPendingStart = false;
 	m_TasPlaybackIndex = 0;
-	m_TasPlaybackSlowCounter = 0;
-	m_TasPlaybackSlowFactor = 1;
+	m_TasPlaybackStartTick = 0;
 	m_TasPlaybackCheckedStart = false;
 	m_TasPlaybackHasStartPosition = false;
 	m_TasPlaybackStartPosition = ivec2(0, 0);
@@ -628,44 +709,27 @@ bool CControls::SaveTasFile(const char *pFilename) const
 	if(!File)
 		return false;
 
-	const bool UseExtended = m_TasHasPositionData;
-	const char *pHeader = UseExtended ? "TAS2\n" : "TAS1\n";
+	const char *pHeader = "TAS3\n";
 	io_write(File, pHeader, str_length(pHeader));
 
 	char aLine[256];
 	for(const auto &Input : m_vTasInputs)
 	{
-		if(UseExtended)
-		{
-			str_format(aLine, sizeof(aLine), "%d %d %d %d %d %d %d %d %d %d %d %d %d\n",
-				Input.m_Input.m_Direction,
-				Input.m_Input.m_Jump,
-				Input.m_Input.m_Fire,
-				Input.m_Input.m_Hook,
-				Input.m_Input.m_WantedWeapon,
-				Input.m_Input.m_NextWeapon,
-				Input.m_Input.m_PrevWeapon,
-				Input.m_Input.m_TargetX,
-				Input.m_Input.m_TargetY,
-				Input.m_Input.m_PlayerFlags,
-				Input.m_Position.x,
-				Input.m_Position.y,
-				Input.m_HasPosition ? 1 : 0);
-		}
-		else
-		{
-			str_format(aLine, sizeof(aLine), "%d %d %d %d %d %d %d %d %d %d\n",
-				Input.m_Input.m_Direction,
-				Input.m_Input.m_Jump,
-				Input.m_Input.m_Fire,
-				Input.m_Input.m_Hook,
-				Input.m_Input.m_WantedWeapon,
-				Input.m_Input.m_NextWeapon,
-				Input.m_Input.m_PrevWeapon,
-				Input.m_Input.m_TargetX,
-				Input.m_Input.m_TargetY,
-				Input.m_Input.m_PlayerFlags);
-		}
+		str_format(aLine, sizeof(aLine), "%d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
+			Input.m_Tick,
+			Input.m_Input.m_Direction,
+			Input.m_Input.m_Jump,
+			Input.m_Input.m_Fire,
+			Input.m_Input.m_Hook,
+			Input.m_Input.m_WantedWeapon,
+			Input.m_Input.m_NextWeapon,
+			Input.m_Input.m_PrevWeapon,
+			Input.m_Input.m_TargetX,
+			Input.m_Input.m_TargetY,
+			Input.m_Input.m_PlayerFlags,
+			Input.m_Position.x,
+			Input.m_Position.y,
+			Input.m_HasPosition ? 1 : 0);
 		io_write(File, aLine, str_length(aLine));
 	}
 
@@ -685,9 +749,11 @@ bool CControls::LoadTasFile(const char *pFilename)
 	}
 
 	m_vTasInputs.clear();
-	m_TasPlaybackSlowFactor = 1;
+	m_TasHasPositionData = false;
 	bool HeaderHandled = false;
 	bool Extended = false;
+	bool WithTick = false;
+	int FallbackTick = 0;
 	while(const char *pLine = LineReader.Get())
 	{
 		if(pLine[0] == '\0' || pLine[0] == '#')
@@ -696,6 +762,12 @@ bool CControls::LoadTasFile(const char *pFilename)
 		if(!HeaderHandled)
 		{
 			HeaderHandled = true;
+			if(str_comp(pLine, "TAS3") == 0)
+			{
+				Extended = true;
+				WithTick = true;
+				continue;
+			}
 			if(str_comp(pLine, "TAS2") == 0)
 			{
 				Extended = true;
@@ -707,22 +779,27 @@ bool CControls::LoadTasFile(const char *pFilename)
 
 		if(Extended && str_startswith_nocase(pLine, "SLOW"))
 		{
-			char aToken[64];
-			const char *pCursor = str_next_token(pLine, " \t", aToken, sizeof(aToken));
-			if(pCursor != nullptr)
-			{
-				pCursor = str_next_token(pCursor, " \t", aToken, sizeof(aToken));
-				int SlowFactor = 1;
-				if(aToken[0] != '\0' && str_toint(aToken, &SlowFactor))
-					m_TasPlaybackSlowFactor = maximum(1, SlowFactor);
-			}
 			continue;
 		}
 
 		CTasInput Input;
-		if(!ParseTasLine(pLine, Input, Extended))
+		if(!ParseTasLine(pLine, Input, Extended, WithTick, FallbackTick))
 			continue;
+		if(!WithTick)
+			FallbackTick++;
+		if(Input.m_HasPosition)
+			m_TasHasPositionData = true;
 		m_vTasInputs.push_back(Input);
+	}
+
+	if(WithTick && !m_vTasInputs.empty())
+	{
+		const int BaseTick = m_vTasInputs.front().m_Tick;
+		if(BaseTick != 0)
+		{
+			for(auto &Input : m_vTasInputs)
+				Input.m_Tick -= BaseTick;
+		}
 	}
 
 	if(m_vTasInputs.empty())
@@ -734,12 +811,12 @@ bool CControls::LoadTasFile(const char *pFilename)
 	return true;
 }
 
-bool CControls::ParseTasLine(const char *pLine, CTasInput &Input, bool Extended)
+bool CControls::ParseTasLine(const char *pLine, CTasInput &Input, bool Extended, bool WithTick, int FallbackTick)
 {
 	const char *pCursor = pLine;
 	char aToken[64];
-	const int ValueCount = Extended ? 13 : 10;
-	int aValues[13];
+	const int ValueCount = (WithTick ? 1 : 0) + (Extended ? 13 : 10);
+	int aValues[14];
 	for(int i = 0; i < ValueCount; i++)
 	{
 		if(!pCursor)
@@ -752,20 +829,22 @@ bool CControls::ParseTasLine(const char *pLine, CTasInput &Input, bool Extended)
 	}
 
 	Input = CTasInput{};
-	Input.m_Input.m_Direction = aValues[0];
-	Input.m_Input.m_Jump = aValues[1];
-	Input.m_Input.m_Fire = aValues[2];
-	Input.m_Input.m_Hook = aValues[3];
-	Input.m_Input.m_WantedWeapon = aValues[4];
-	Input.m_Input.m_NextWeapon = aValues[5];
-	Input.m_Input.m_PrevWeapon = aValues[6];
-	Input.m_Input.m_TargetX = aValues[7];
-	Input.m_Input.m_TargetY = aValues[8];
-	Input.m_Input.m_PlayerFlags = aValues[9];
+	const int Offset = WithTick ? 1 : 0;
+	Input.m_Tick = WithTick ? aValues[0] : FallbackTick;
+	Input.m_Input.m_Direction = aValues[Offset + 0];
+	Input.m_Input.m_Jump = aValues[Offset + 1];
+	Input.m_Input.m_Fire = aValues[Offset + 2];
+	Input.m_Input.m_Hook = aValues[Offset + 3];
+	Input.m_Input.m_WantedWeapon = aValues[Offset + 4];
+	Input.m_Input.m_NextWeapon = aValues[Offset + 5];
+	Input.m_Input.m_PrevWeapon = aValues[Offset + 6];
+	Input.m_Input.m_TargetX = aValues[Offset + 7];
+	Input.m_Input.m_TargetY = aValues[Offset + 8];
+	Input.m_Input.m_PlayerFlags = aValues[Offset + 9];
 	if(Extended)
 	{
-		Input.m_Position = ivec2(aValues[10], aValues[11]);
-		Input.m_HasPosition = aValues[12] != 0;
+		Input.m_Position = ivec2(aValues[Offset + 10], aValues[Offset + 11]);
+		Input.m_HasPosition = aValues[Offset + 12] != 0;
 	}
 	return true;
 }
@@ -818,6 +897,9 @@ void CControls::OnRender()
 
 bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 {
+	if(m_TasPlaying)
+		return false;
+
 	if(GameClient()->m_Snap.m_pGameInfoObj && (GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_PAUSED))
 		return false;
 
