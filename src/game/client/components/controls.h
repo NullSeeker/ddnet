@@ -60,6 +60,7 @@ public:
 private:
 	struct CTasInput
 	{
+		int m_Tick = 0;
 		CNetObj_PlayerInput m_Input{};
 		ivec2 m_Position = ivec2(0, 0);
 		bool m_HasPosition = false;
@@ -80,14 +81,19 @@ private:
 	void StopTasPlayback();
 	bool SaveTasFile(const char *pFilename) const;
 	bool LoadTasFile(const char *pFilename);
-	static bool ParseTasLine(const char *pLine, CTasInput &Input, bool Extended);
-	bool TryResyncTasPlayback(const ivec2 &CurrentPosition, float Threshold);
+	static bool ParseTasLine(const char *pLine, CTasInput &Input, bool Extended, bool WithTick, int FallbackTick);
+	bool TryResyncTasPlayback(const ivec2 &CurrentPosition, float Threshold, int CurrentPredTick);
+	void UpdateTasStartState();
 
 	bool m_TasRecording = false;
+	bool m_TasRecordingPendingStart = false;
 	bool m_TasPlaying = false;
+	bool m_TasPlaybackPendingStart = false;
 	size_t m_TasPlaybackIndex = 0;
-	int m_TasPlaybackSlowFactor = 1;
-	int m_TasPlaybackSlowCounter = 0;
+	int m_TasPlaybackStartTick = 0;
+	int m_TasRecordStartTick = 0;
+	int m_TasLastRecordedTick = -1;
+	bool m_TasWasActive = false;
 	bool m_TasPlaybackCheckedStart = false;
 	bool m_TasPlaybackHasStartPosition = false;
 	ivec2 m_TasPlaybackStartPosition = ivec2(0, 0);
