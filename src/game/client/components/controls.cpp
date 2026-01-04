@@ -608,12 +608,23 @@ void CControls::StartTasRecording(const char *pFilename)
 	str_format(m_aTasFilename, sizeof(m_aTasFilename), "tas/%s.tas", aName);
 	m_vTasInputs.clear();
 	m_TasHasPositionData = false;
-	m_TasRecording = false;
-	m_TasRecordingPendingStart = true;
-	m_TasRecordStartTick = 0;
 	m_TasLastRecordedTick = -1;
-	m_TasWasActive = GameClient()->m_Snap.m_pLocalCharacter != nullptr && !GameClient()->m_Snap.m_SpecInfo.m_Active;
-	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS recording armed; will start after respawn.");
+	const bool LocalActive = GameClient()->m_Snap.m_pLocalCharacter != nullptr && !GameClient()->m_Snap.m_SpecInfo.m_Active;
+	if(LocalActive)
+	{
+		m_TasRecording = true;
+		m_TasRecordingPendingStart = false;
+		m_TasRecordStartTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS recording.");
+	}
+	else
+	{
+		m_TasRecording = false;
+		m_TasRecordingPendingStart = true;
+		m_TasRecordStartTick = 0;
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS recording armed; will start after respawn.");
+	}
+	m_TasWasActive = LocalActive;
 }
 
 void CControls::StopTasRecording(bool SaveToFile)
