@@ -619,10 +619,11 @@ void CControls::StartTasRecording(const char *pFilename)
 	}
 	else
 	{
-		m_TasRecording = false;
-		m_TasRecordingPendingStart = true;
-		m_TasRecordStartTick = 0;
-		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS recording armed; will start after respawn.");
+		m_TasRecording = true;
+		m_TasRecordingPendingStart = false;
+		m_TasRecordStartTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		GameClient()->SendKill();
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Started TAS recording.");
 	}
 	m_TasWasActive = LocalActive;
 }
