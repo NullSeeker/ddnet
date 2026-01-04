@@ -72,13 +72,10 @@ void CControls::OnPlayerDeath()
 {
 	for(int &AmmoCount : m_aAmmoCount)
 		AmmoCount = 0;
-	StopTasPlayback();
-	StopTasRecording(false);
-	m_TasRecordingPendingStart = false;
-	m_TasPlaybackPendingStart = false;
-	m_TasPlaybackStartTick = 0;
-	m_TasRecordStartTick = 0;
-	m_TasLastRecordedTick = -1;
+	if(m_TasPlaying)
+		StopTasPlayback();
+	if(m_TasRecording)
+		StopTasRecording(false);
 	m_TasWasActive = false;
 }
 
