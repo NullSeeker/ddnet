@@ -13,7 +13,9 @@
 
 #include <game/client/components/chat.h>
 #include <game/client/gameclient.h>
+#include <game/client/components/players.h>
 
+#include <base/math.h>
 #include <base/system.h>
 
 #include <algorithm>
@@ -40,6 +42,7 @@ int JsonToInt(const json_value &Value, int DefaultValue)
 CTasPlayer::CTasPlayer()
 {
 	m_aFileName[0] = '\0';
+	m_aRecordFileName[0] = '\0';
 	m_aMapName[0] = '\0';
 }
 
@@ -54,8 +57,12 @@ void CTasPlayer::OnConsoleInit()
 	}, this, "Load and start TAS playback from file");
 
 	Console()->Register("cl_tas_stop", "", CFGFLAG_CLIENT, [](IConsole::IResult *, void *pUserData) {
-		static_cast<CTasPlayer *>(pUserData)->Stop();
-	}, this, "Stop TAS playback and clear state");
+		auto *pSelf = static_cast<CTasPlayer *>(pUserData);
+		if(pSelf->IsRecording())
+			pSelf->StopRecording(true, true);
+		else
+			pSelf->Stop();
+	}, this, "Stop TAS playback or recording and clear state");
 
 	Console()->Register("cl_tas_pause", "", CFGFLAG_CLIENT, [](IConsole::IResult *, void *pUserData) {
 		static_cast<CTasPlayer *>(pUserData)->TogglePause();
@@ -72,10 +79,16 @@ void CTasPlayer::OnConsoleInit()
 	Console()->Register("cl_tas_info", "", CFGFLAG_CLIENT, [](IConsole::IResult *, void *pUserData) {
 		static_cast<CTasPlayer *>(pUserData)->PrintInfo();
 	}, this, "Print information about loaded TAS");
+
+	Console()->Register("cl_tas_record", "s[file]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
+		static_cast<CTasPlayer *>(pUserData)->StartRecord(pResult->GetString(0));
+	}, this, "Start TAS recording to file (client-side ghost)");
 }
 
 void CTasPlayer::OnRender()
 {
+	RenderRecordingGhost();
+
 	if(!m_Active || !g_Config.m_ClTasHud)
 		return;
 
@@ -100,15 +113,25 @@ void CTasPlayer::OnRender()
 void CTasPlayer::OnReset()
 {
 	Stop(false);
+	StopRecording(false, false);
 }
 
 void CTasPlayer::OnShutdown()
 {
 	Stop(false);
+	StopRecording(false, false);
 }
 
 bool CTasPlayer::ApplyInput(CNetObj_PlayerInput &Input, int GameTick)
 {
+	if(m_Recording)
+	{
+		const CNetObj_PlayerInput RecordedInput = Input;
+		ApplyRecordingInput(RecordedInput, GameTick);
+		ApplyNeutralInput(Input);
+		return true;
+	}
+
 	if(!m_Active)
 		return false;
 
@@ -172,6 +195,53 @@ bool CTasPlayer::ApplyInput(CNetObj_PlayerInput &Input, int GameTick)
 
 	(void)GameTick;
 	return true;
+}
+
+void CTasPlayer::ApplyRecordingInput(const CNetObj_PlayerInput &Input, int GameTick)
+{
+	if(m_Paused)
+		return;
+
+	if(!GameClient()->m_Snap.m_pLocalCharacter)
+	{
+		WarnNoLocalCharacter();
+		return;
+	}
+
+	m_WarnedNoLocalCharacter = false;
+
+	const float ClampedSpeed = std::clamp(m_Speed, 0.1f, 10.0f);
+	m_RecordSpeedAccumulator += ClampedSpeed;
+
+	int StepsToAdvance = static_cast<int>(m_RecordSpeedAccumulator);
+	if(StepsToAdvance > 0)
+		m_RecordSpeedAccumulator -= StepsToAdvance;
+
+	const int StepsToProcess = StepsToAdvance > 0 ? StepsToAdvance : 1;
+
+	for(int i = 0; i < StepsToProcess; ++i)
+	{
+		if(StepsToAdvance > 0 && m_RecordGhostReady)
+			m_RecordGhostTick++;
+
+		UpdateRecordingGhost(Input);
+
+		CTasTick Tick{};
+		Tick.m_Direction = std::clamp(Input.m_Direction, -1, 1);
+		Tick.m_Jump = Input.m_Jump ? 1 : 0;
+		Tick.m_Fire = (Input.m_Fire & 1) != 0 ? 1 : 0;
+		Tick.m_Hook = Input.m_Hook ? 1 : 0;
+		Tick.m_WantedWeapon = std::clamp(Input.m_WantedWeapon, 0, static_cast<int>(NUM_WEAPONS));
+		Tick.m_TargetX = Input.m_TargetX;
+		Tick.m_TargetY = Input.m_TargetY;
+		m_vTicks.push_back(Tick);
+
+		if(StepsToAdvance == 0)
+			break;
+	}
+
+	m_RecordInput = Input;
+	(void)GameTick;
 }
 
 bool CTasPlayer::Load(const char *pFilename)
@@ -283,6 +353,7 @@ bool CTasPlayer::Load(const char *pFilename)
 
 void CTasPlayer::Start()
 {
+	StopRecording(false, false);
 	ResetPlaybackState();
 	m_Active = true;
 	m_Paused = false;
@@ -314,7 +385,7 @@ void CTasPlayer::Stop(bool PrintMessage)
 
 void CTasPlayer::TogglePause()
 {
-	if(!m_Active)
+	if(!m_Active && !m_Recording)
 		return;
 
 	m_Paused = !m_Paused;
@@ -365,6 +436,45 @@ void CTasPlayer::PrintInfo() const
 		m_CurrentTick,
 		m_Speed);
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aBuf);
+}
+
+void CTasPlayer::StartRecord(const char *pFilename)
+{
+	if(!pFilename || pFilename[0] == '\0')
+	{
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS: missing filename");
+		return;
+	}
+
+	Stop(false);
+	StopRecording(false, false);
+
+	if(!GameClient() || !GameClient()->m_Snap.m_pLocalCharacter)
+	{
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS: local character missing");
+		return;
+	}
+
+	str_copy(m_aRecordFileName, pFilename, sizeof(m_aRecordFileName));
+	str_copy(m_aMapName, Client()->GetCurrentMap(), sizeof(m_aMapName));
+
+	m_vTicks.clear();
+	m_Version = 1;
+	m_Recording = true;
+	m_Paused = false;
+	m_RecordSpeedAccumulator = 0.0f;
+	m_RecordGhostTick = 0;
+	m_RecordAttackTick = 0;
+	m_RecordGhostReady = false;
+	m_RecordInput = {};
+	m_RecordPrevChar = {};
+	m_RecordCurChar = {};
+
+	ResetRecordingState();
+
+	char aBuf[256];
+	str_format(aBuf, sizeof(aBuf), "TAS: recording to %s (speed %.2f)", m_aRecordFileName, m_Speed);
+	AddChatLine(aBuf);
 }
 
 void CTasPlayer::ResetPlaybackState()
@@ -439,4 +549,148 @@ void CTasPlayer::WarnNoLocalCharacter()
 
 	m_WarnedNoLocalCharacter = true;
 	AddChatLine("TAS: local character missing, input suppressed");
+}
+
+void CTasPlayer::StopRecording(bool SaveFile, bool PrintMessage)
+{
+	if(!m_Recording)
+		return;
+
+	m_Recording = false;
+	m_Paused = false;
+
+	if(SaveFile && m_aRecordFileName[0] != '\0')
+	{
+		if(!SaveRecording(m_aRecordFileName))
+			AddChatLine("TAS: failed to save recording");
+		else if(PrintMessage)
+			AddChatLine("TAS: recording saved");
+	}
+	else if(PrintMessage)
+	{
+		AddChatLine("TAS: recording stopped");
+	}
+
+	m_aRecordFileName[0] = '\0';
+}
+
+bool CTasPlayer::SaveRecording(const char *pFilename) const
+{
+	IOHANDLE File = Storage()->OpenFile(pFilename, IOFLAG_WRITE, IStorage::TYPE_SAVE_OR_ABSOLUTE);
+	if(!File)
+		return false;
+
+	io_write(File, "{\n", 2);
+
+	char aBuf[256];
+	str_format(aBuf, sizeof(aBuf), "  \"version\": %d,\n", m_Version);
+	io_write(File, aBuf, str_length(aBuf));
+
+	str_format(aBuf, sizeof(aBuf), "  \"map\": \"%s\",\n", m_aMapName);
+	io_write(File, aBuf, str_length(aBuf));
+
+	io_write(File, "  \"ticks\": [\n", 13);
+
+	for(size_t i = 0; i < m_vTicks.size(); ++i)
+	{
+		const CTasTick &Tick = m_vTicks[i];
+		str_format(aBuf, sizeof(aBuf),
+			"    {\"dir\":%d,\"jump\":%d,\"fire\":%d,\"hook\":%d,\"weapon\":%d,\"tx\":%d,\"ty\":%d}%s\n",
+			Tick.m_Direction,
+			Tick.m_Jump,
+			Tick.m_Fire,
+			Tick.m_Hook,
+			Tick.m_WantedWeapon,
+			Tick.m_TargetX,
+			Tick.m_TargetY,
+			i + 1 == m_vTicks.size() ? "" : ",");
+		io_write(File, aBuf, str_length(aBuf));
+	}
+
+	io_write(File, "  ]\n}\n", 7);
+	io_close(File);
+	return true;
+}
+
+void CTasPlayer::UpdateRecordingGhost(const CNetObj_PlayerInput &Input)
+{
+	if(!m_RecordGhostReady)
+	{
+		m_RecordGhostReady = true;
+		const CCharacterCore &BaseCore = GameClient()->m_PredictedChar;
+		m_RecordCore = BaseCore;
+		m_RecordCore.m_Id = 0;
+		m_RecordCore.m_Input = Input;
+		m_RecordCore.m_HookTeleBase = BaseCore.m_Pos;
+		m_RecordCore.m_TriggeredEvents = 0;
+		m_RecordCore.SetCoreWorld(&m_RecordWorld, Collision(), &GameClient()->m_Teams);
+		m_RecordWorld.m_apCharacters[0] = &m_RecordCore;
+		m_RecordWorld.m_pPrng = &m_RecordPrng;
+		uint64_t aSeed[2] = {static_cast<uint64_t>(time_get()), static_cast<uint64_t>(time_get() ^ 0x9e3779b97f4a7c15ULL)};
+		m_RecordPrng.Seed(aSeed);
+		m_RecordGhostTick = GameClient()->m_Snap.m_pLocalCharacter->m_Tick;
+		m_RecordAttackTick = m_RecordGhostTick;
+		BuildRecordNetChar(m_RecordCurChar, m_RecordCore);
+		m_RecordPrevChar = m_RecordCurChar;
+		return;
+	}
+
+	m_RecordPrevChar = m_RecordCurChar;
+	m_RecordCore.m_Input = Input;
+
+	const int PrevFire = m_RecordInput.m_Fire & INPUT_STATE_MASK;
+	const int CurFire = Input.m_Fire & INPUT_STATE_MASK;
+	const CInputCount FireCount = CountInput(PrevFire, CurFire);
+	if(FireCount.m_Presses > 0)
+		m_RecordAttackTick = m_RecordGhostTick;
+
+	m_RecordCore.Tick(true);
+	m_RecordCore.Move();
+	m_RecordCore.Quantize();
+
+	BuildRecordNetChar(m_RecordCurChar, m_RecordCore);
+	m_RecordCurChar.m_AttackTick = m_RecordAttackTick;
+	m_RecordCurChar.m_Tick = m_RecordGhostTick;
+	m_RecordPrevChar.m_Tick = m_RecordGhostTick - 1;
+}
+
+void CTasPlayer::ResetRecordingState()
+{
+	m_RecordWorld.m_pPrng = &m_RecordPrng;
+	for(auto &pChar : m_RecordWorld.m_apCharacters)
+		pChar = nullptr;
+	m_RecordWorld.m_vSwitchers.clear();
+	m_RecordCore.SetCoreWorld(&m_RecordWorld, Collision(), &GameClient()->m_Teams);
+}
+
+void CTasPlayer::BuildRecordNetChar(CNetObj_Character &Out, const CCharacterCore &Core) const
+{
+	mem_zero(&Out, sizeof(Out));
+	Out.m_X = round_to_int(Core.m_Pos.x);
+	Out.m_Y = round_to_int(Core.m_Pos.y);
+	Out.m_VelX = round_to_int(Core.m_Vel.x * 256.0f);
+	Out.m_VelY = round_to_int(Core.m_Vel.y * 256.0f);
+	Out.m_Angle = Core.m_Angle;
+	Out.m_Direction = Core.m_Direction;
+	Out.m_Weapon = Core.m_ActiveWeapon;
+	Out.m_HookState = Core.m_HookState;
+	Out.m_HookX = round_to_int(Core.m_HookPos.x);
+	Out.m_HookY = round_to_int(Core.m_HookPos.y);
+	Out.m_AttackTick = m_RecordAttackTick;
+	Out.m_Tick = m_RecordGhostTick;
+}
+
+void CTasPlayer::RenderRecordingGhost()
+{
+	if(!m_Recording || !m_RecordGhostReady)
+		return;
+
+	if(GameClient()->m_Snap.m_LocalClientId < 0)
+		return;
+
+	const CTeeRenderInfo *pRenderInfo = &GameClient()->m_aClients[GameClient()->m_Snap.m_LocalClientId].m_RenderInfo;
+	const float IntraTick = Client()->PredIntraGameTick(g_Config.m_ClDummy);
+
+	GameClient()->m_Players.RenderHook(&m_RecordPrevChar, &m_RecordCurChar, pRenderInfo, -2, IntraTick);
+	GameClient()->m_Players.RenderPlayer(&m_RecordPrevChar, &m_RecordCurChar, pRenderInfo, -2, IntraTick);
 }
