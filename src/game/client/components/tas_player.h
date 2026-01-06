@@ -16,6 +16,7 @@ public:
 	void OnRender() override;
 	void OnReset() override;
 	void OnShutdown() override;
+	int Sizeof() const override { return sizeof(*this); }
 
 	bool ApplyInput(CNetObj_PlayerInput &Input, int GameTick);
 
