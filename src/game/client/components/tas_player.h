@@ -7,6 +7,8 @@
 
 #include <vector>
 
+struct CNetObj_PlayerInput;
+
 class CTasPlayer : public CComponent
 {
 public:

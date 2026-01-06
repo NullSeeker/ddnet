@@ -258,17 +258,17 @@ bool CTasPlayer::Load(const char *pFilename)
 		const json_value &Fire = JsonTick["fire"];
 		const json_value &Hook = JsonTick["hook"];
 		const json_value &Weapon = JsonTick["weapon"];
-	const json_value &TargetX = JsonTick["tx"];
-	const json_value &TargetY = JsonTick["ty"];
-	const json_value &LegacyTargetX = JsonTick["wx"];
-	const json_value &LegacyTargetY = JsonTick["wy"];
+		const json_value &TargetX = JsonTick["tx"];
+		const json_value &TargetY = JsonTick["ty"];
+		const json_value &LegacyTargetX = JsonTick["wx"];
+		const json_value &LegacyTargetY = JsonTick["wy"];
 
 		CTasTick Tick{};
 		Tick.m_Direction = std::clamp(JsonToInt(Dir, 0), -1, 1);
 		Tick.m_Jump = JsonToInt(Jump, 0) ? 1 : 0;
 		Tick.m_Fire = JsonToInt(Fire, 0) ? 1 : 0;
 		Tick.m_Hook = JsonToInt(Hook, 0) ? 1 : 0;
-		Tick.m_WantedWeapon = std::clamp(JsonToInt(Weapon, 0), 0, NUM_WEAPONS);
+		Tick.m_WantedWeapon = std::clamp(JsonToInt(Weapon, 0), 0, static_cast<int>(NUM_WEAPONS));
 		Tick.m_TargetX = JsonToInt(TargetX, JsonToInt(LegacyTargetX, 0));
 		Tick.m_TargetY = JsonToInt(TargetY, JsonToInt(LegacyTargetY, 0));
 
@@ -418,14 +418,16 @@ bool CTasPlayer::AdvanceTick()
 
 void CTasPlayer::AddChatLine(const char *pMessage) const
 {
+	constexpr int SERVER_MSG_CLIENT_ID = -1;
+
 	if(GameClient() && GameClient()->m_Chat.IsActive())
 	{
-		GameClient()->m_Chat.AddLine(SERVER_MSG, 0, pMessage);
+		GameClient()->m_Chat.AddLine(SERVER_MSG_CLIENT_ID, 0, pMessage);
 		return;
 	}
 
 	if(GameClient())
-		GameClient()->m_Chat.AddLine(SERVER_MSG, 0, pMessage);
+		GameClient()->m_Chat.AddLine(SERVER_MSG_CLIENT_ID, 0, pMessage);
 	else
 		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", pMessage);
 }
