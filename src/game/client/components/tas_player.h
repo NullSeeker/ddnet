@@ -5,9 +5,9 @@
 
 #include <game/client/component.h>
 
-#include <vector>
+#include <generated/protocol.h>
 
-struct CNetObj_PlayerInput;
+#include <vector>
 
 class CTasPlayer : public CComponent
 {
