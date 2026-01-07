@@ -254,6 +254,14 @@ void CGhost::CheckStartLocal(bool Predicted)
 
 void CGhost::TryRenderStart(int Tick, bool ServerControl)
 {
+	if(Tick != -1 && !m_Rendering)
+	{
+		StartRender(Tick);
+		m_RenderingStartedByServer = ServerControl;
+		m_NewRenderTick = -1;
+		return;
+	}
+
 	// only restart rendering if it did not change since last tick to prevent stuttering
 	if(m_NewRenderTick != -1 && m_NewRenderTick == Tick)
 	{
