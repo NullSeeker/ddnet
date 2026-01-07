@@ -32,7 +32,7 @@ struct CGhostCharacter_NoTick
 	int m_X;
 	int m_Y;
 	int m_VelX;
-	int m_VelY;
+	int m_VelY; // Used for ghost flags, see GHOST_CHARFLAG_*.
 	int m_Angle;
 	int m_Direction;
 	int m_Weapon;
@@ -40,6 +40,11 @@ struct CGhostCharacter_NoTick
 	int m_HookX;
 	int m_HookY;
 	int m_AttackTick;
+};
+
+enum
+{
+	GHOST_CHARFLAG_FROZEN = 1 << 0,
 };
 
 struct CGhostCharacter : public CGhostCharacter_NoTick
