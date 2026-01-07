@@ -302,6 +302,9 @@ void CGhost::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
+	if(g_Config.m_ClRaceShowGhost)
+		RenderRecordingGhost();
+
 	// Play the ghost
 	if(!m_Rendering || !g_Config.m_ClRaceShowGhost)
 		return;
@@ -367,6 +370,42 @@ void CGhost::OnRender()
 		GameClient()->m_Players.RenderHook(&Prev, &Player, &GhostRenderInfo, -2, IntraTick);
 		GameClient()->m_Players.RenderPlayer(&Prev, &Player, &GhostRenderInfo, -2, IntraTick);
 	}
+}
+
+void CGhost::RenderRecordingGhost()
+{
+	if(!m_Recording || !m_CurGhost.m_pManagedTeeRenderInfo)
+		return;
+
+	const int LocalId = GameClient()->m_Snap.m_LocalClientId;
+	if(LocalId < 0)
+		return;
+
+	const CGameClient::CClientData &LocalClient = GameClient()->m_aClients[LocalId];
+	const float Intra = LocalClient.m_IsPredicted ? Client()->PredIntraGameTick(g_Config.m_ClDummy) : Client()->IntraGameTick(g_Config.m_ClDummy);
+
+	CTeeRenderInfo GhostRenderInfo = m_CurGhost.m_pManagedTeeRenderInfo->TeeRenderInfo();
+	GhostRenderInfo.m_TeeRenderFlags |= TEE_EFFECT_SPARKLE;
+
+	if(g_Config.m_ClShowNinja && LocalClient.m_RenderCur.m_Weapon == WEAPON_NINJA)
+	{
+		GhostRenderInfo.ApplySkin(GameClient()->m_Players.NinjaTeeRenderInfo()->TeeRenderInfo());
+		GhostRenderInfo.m_CustomColoredSkin = GameClient()->IsTeamPlay();
+		if(!GhostRenderInfo.m_CustomColoredSkin)
+		{
+			GhostRenderInfo.m_ColorBody = ColorRGBA(1, 1, 1);
+			GhostRenderInfo.m_ColorFeet = ColorRGBA(1, 1, 1);
+		}
+	}
+
+	const bool Frozen = LocalClient.m_Predicted.m_FreezeEnd != 0;
+	if(Frozen)
+	{
+		GhostRenderInfo.m_TeeRenderFlags |= TEE_EFFECT_FROZEN | TEE_NO_WEAPON;
+	}
+
+	GameClient()->m_Players.RenderHook(&LocalClient.m_RenderPrev, &LocalClient.m_RenderCur, &GhostRenderInfo, -2, Intra);
+	GameClient()->m_Players.RenderPlayer(&LocalClient.m_RenderPrev, &LocalClient.m_RenderCur, &GhostRenderInfo, -2, Intra);
 }
 
 void CGhost::UpdateTeeRenderInfo(CGhostItem &Ghost)

@@ -142,6 +142,7 @@ private:
 	void StopRender();
 
 	void UpdateTeeRenderInfo(CGhostItem &Ghost);
+	void RenderRecordingGhost();
 
 	static void ConGPlay(IConsole::IResult *pResult, void *pUserData);
 
