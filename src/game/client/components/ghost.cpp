@@ -31,15 +31,10 @@ void CGhost::GetGhostCharacter(CGhostCharacter *pGhostChar, const CNetObj_Charac
 	pGhostChar->m_X = pChar->m_X;
 	pGhostChar->m_Y = pChar->m_Y;
 	pGhostChar->m_VelX = pChar->m_VelX;
-	pGhostChar->m_VelY = 0;
+	pGhostChar->m_VelY = (pDDnetChar != nullptr && pDDnetChar->m_FreezeEnd != 0) ? GHOST_CHARFLAG_FROZEN : 0;
 	pGhostChar->m_Angle = pChar->m_Angle;
 	pGhostChar->m_Direction = pChar->m_Direction;
-	int Weapon = pChar->m_Weapon;
-	if(pDDnetChar != nullptr && pDDnetChar->m_FreezeEnd != 0)
-	{
-		Weapon = WEAPON_NINJA;
-	}
-	pGhostChar->m_Weapon = Weapon;
+	pGhostChar->m_Weapon = pChar->m_Weapon;
 	pGhostChar->m_HookState = pChar->m_HookState;
 	pGhostChar->m_HookX = pChar->m_HookX;
 	pGhostChar->m_HookY = pChar->m_HookY;
@@ -336,8 +331,10 @@ void CGhost::OnRender()
 			continue;
 
 		CNetObj_Character Player, Prev;
-		GetNetObjCharacter(&Player, Ghost.m_Path.Get(CurPos));
-		GetNetObjCharacter(&Prev, Ghost.m_Path.Get(PrevPos));
+		const CGhostCharacter *pCurGhostChar = Ghost.m_Path.Get(CurPos);
+		const CGhostCharacter *pPrevGhostChar = Ghost.m_Path.Get(PrevPos);
+		GetNetObjCharacter(&Player, pCurGhostChar);
+		GetNetObjCharacter(&Prev, pPrevGhostChar);
 
 		int TickDiff = Player.m_Tick - Prev.m_Tick;
 		float IntraTick = 0.f;
@@ -346,24 +343,29 @@ void CGhost::OnRender()
 
 		Player.m_AttackTick += Client()->GameTick(g_Config.m_ClDummy) - GhostTick;
 
+		const bool Frozen = (pCurGhostChar->m_VelY & GHOST_CHARFLAG_FROZEN) != 0;
 		const CTeeRenderInfo *pRenderInfo = &Ghost.m_pManagedTeeRenderInfo->TeeRenderInfo();
-		CTeeRenderInfo GhostNinjaRenderInfo;
-		if(Player.m_Weapon == WEAPON_NINJA && g_Config.m_ClShowNinja)
+		CTeeRenderInfo GhostRenderInfo = *pRenderInfo;
+		if(g_Config.m_ClShowNinja && (Player.m_Weapon == WEAPON_NINJA || (Frozen && !GameClient()->m_GameInfo.m_NoSkinChangeForFrozen)))
 		{
 			// change the skin for the ghost to the ninja
-			GhostNinjaRenderInfo = Ghost.m_pManagedTeeRenderInfo->TeeRenderInfo();
-			GhostNinjaRenderInfo.ApplySkin(GameClient()->m_Players.NinjaTeeRenderInfo()->TeeRenderInfo());
-			GhostNinjaRenderInfo.m_CustomColoredSkin = GameClient()->IsTeamPlay();
-			if(!GhostNinjaRenderInfo.m_CustomColoredSkin)
+			GhostRenderInfo = Ghost.m_pManagedTeeRenderInfo->TeeRenderInfo();
+			GhostRenderInfo.ApplySkin(GameClient()->m_Players.NinjaTeeRenderInfo()->TeeRenderInfo());
+			GhostRenderInfo.m_CustomColoredSkin = GameClient()->IsTeamPlay();
+			if(!GhostRenderInfo.m_CustomColoredSkin)
 			{
-				GhostNinjaRenderInfo.m_ColorBody = ColorRGBA(1, 1, 1);
-				GhostNinjaRenderInfo.m_ColorFeet = ColorRGBA(1, 1, 1);
+				GhostRenderInfo.m_ColorBody = ColorRGBA(1, 1, 1);
+				GhostRenderInfo.m_ColorFeet = ColorRGBA(1, 1, 1);
 			}
-			pRenderInfo = &GhostNinjaRenderInfo;
 		}
 
-		GameClient()->m_Players.RenderHook(&Prev, &Player, pRenderInfo, -2, IntraTick);
-		GameClient()->m_Players.RenderPlayer(&Prev, &Player, pRenderInfo, -2, IntraTick);
+		if(Frozen)
+		{
+			GhostRenderInfo.m_TeeRenderFlags |= TEE_EFFECT_FROZEN | TEE_NO_WEAPON;
+		}
+
+		GameClient()->m_Players.RenderHook(&Prev, &Player, &GhostRenderInfo, -2, IntraTick);
+		GameClient()->m_Players.RenderPlayer(&Prev, &Player, &GhostRenderInfo, -2, IntraTick);
 	}
 }
 
