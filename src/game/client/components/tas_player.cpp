@@ -702,6 +702,12 @@ void CTasPlayer::UpdateGhost(const CNetObj_PlayerInput &Input)
 
 	m_GhostPrevChar = m_GhostCurChar;
 	m_GhostCore.m_Input = Input;
+	if(Input.m_WantedWeapon > 0)
+	{
+		const int WantedWeapon = Input.m_WantedWeapon - 1;
+		if(WantedWeapon >= 0 && WantedWeapon < NUM_WEAPONS && m_GhostCore.m_aWeapons[WantedWeapon].m_Got)
+			m_GhostCore.m_ActiveWeapon = WantedWeapon;
+	}
 
 	const int PrevFire = m_GhostInput.m_Fire & INPUT_STATE_MASK;
 	const int CurFire = Input.m_Fire & INPUT_STATE_MASK;
@@ -759,10 +765,21 @@ void CTasPlayer::RenderGhost()
 	const float IntraTick = Client()->PredIntraGameTick(g_Config.m_ClDummy);
 
 	const int PreviousAlpha = g_Config.m_ClRaceGhostAlpha;
-	g_Config.m_ClRaceGhostAlpha = round_to_int(m_GhostAlpha * 100.0f);
+	const int GhostAlpha = round_to_int(m_GhostAlpha * 100.0f);
+	g_Config.m_ClRaceGhostAlpha = GhostAlpha;
 	GameClient()->m_Players.RenderHook(&m_GhostPrevChar, &m_GhostCurChar, pRenderInfo, -2, IntraTick);
 	GameClient()->m_Players.RenderPlayer(&m_GhostPrevChar, &m_GhostCurChar, pRenderInfo, -2, IntraTick);
 	g_Config.m_ClRaceGhostAlpha = PreviousAlpha;
+
+	if(m_Recording)
+	{
+		const float MarkerAlpha = maximum(m_GhostAlpha, 0.35f);
+		Graphics()->TextureClear();
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, MarkerAlpha);
+		Graphics()->DrawCircle(m_GhostCurChar.m_X, m_GhostCurChar.m_Y, 18.0f, 32);
+		Graphics()->QuadsEnd();
+	}
 }
 
 int CTasPlayer::ConsumeAdvanceSteps(float &Accumulator)
