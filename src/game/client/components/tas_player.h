@@ -34,6 +34,7 @@ public:
 	const char *FileName() const { return m_aFileName; }
 	const char *MapName() const { return m_aMapName; }
 	int Version() const { return m_Version; }
+	bool RecordingGhostPosition(vec2 &Pos) const;
 
 	bool Load(const char *pFilename);
 	void Start();
