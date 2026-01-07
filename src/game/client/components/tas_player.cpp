@@ -59,18 +59,25 @@ void CTasPlayer::OnConsoleInit()
 	Console()->Register("cl_tas_stop", "", CFGFLAG_CLIENT, [](IConsole::IResult *, void *pUserData) {
 		auto *pSelf = static_cast<CTasPlayer *>(pUserData);
 		if(pSelf->IsRecording())
-			pSelf->StopRecording(true, true);
-		else
-			pSelf->Stop();
+			pSelf->StopRecording(true);
+		pSelf->Stop();
 	}, this, "Stop TAS playback or recording and clear state");
 
-	Console()->Register("cl_tas_pause", "", CFGFLAG_CLIENT, [](IConsole::IResult *, void *pUserData) {
-		static_cast<CTasPlayer *>(pUserData)->TogglePause();
-	}, this, "Toggle TAS playback pause");
+	Console()->Register("cl_tas_pause", "i[pause]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
+		static_cast<CTasPlayer *>(pUserData)->SetPaused(pResult->GetInteger(0) != 0);
+	}, this, "Pause TAS playback/recording ghost ticking (0/1)");
+
+	Console()->Register("cl_tas_timescale", "f[speed]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
+		static_cast<CTasPlayer *>(pUserData)->SetTimeScale(pResult->GetFloat(0));
+	}, this, "Set TAS ghost tick time scale (0.0 - 2.0)");
 
 	Console()->Register("cl_tas_speed", "f[speed]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
-		static_cast<CTasPlayer *>(pUserData)->SetSpeed(pResult->GetFloat(0));
-	}, this, "Set TAS playback speed (0.1 - 10.0)");
+		static_cast<CTasPlayer *>(pUserData)->SetTimeScale(pResult->GetFloat(0));
+	}, this, "Legacy alias for cl_tas_timescale");
+
+	Console()->Register("cl_tas_step", "", CFGFLAG_CLIENT, [](IConsole::IResult *, void *pUserData) {
+		static_cast<CTasPlayer *>(pUserData)->Step();
+	}, this, "Advance TAS ghost by one tick");
 
 	Console()->Register("cl_tas_seek", "i[tick]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
 		static_cast<CTasPlayer *>(pUserData)->Seek(pResult->GetInteger(0));
@@ -80,14 +87,38 @@ void CTasPlayer::OnConsoleInit()
 		static_cast<CTasPlayer *>(pUserData)->PrintInfo();
 	}, this, "Print information about loaded TAS");
 
-	Console()->Register("cl_tas_record", "s[file]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
-		static_cast<CTasPlayer *>(pUserData)->StartRecord(pResult->GetString(0));
-	}, this, "Start TAS recording to file (client-side ghost)");
+	Console()->Register("cl_tas_record", "i[record]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
+		auto *pSelf = static_cast<CTasPlayer *>(pUserData);
+		if(pResult->GetInteger(0))
+			pSelf->StartRecord();
+		else
+			pSelf->StopRecording(true);
+	}, this, "Enable/disable TAS recording (client-side ghost)");
+
+	Console()->Register("cl_tas_save", "s[file]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
+		auto *pSelf = static_cast<CTasPlayer *>(pUserData);
+		if(!pSelf->SaveRecordingToFile(pResult->GetString(0)))
+			pSelf->AddChatLine("TAS: failed to save recording");
+		else
+			pSelf->AddChatLine("TAS: recording saved");
+	}, this, "Save current TAS recording to file");
+
+	Console()->Register("cl_tas_clear", "", CFGFLAG_CLIENT, [](IConsole::IResult *, void *pUserData) {
+		static_cast<CTasPlayer *>(pUserData)->ClearRecording();
+	}, this, "Clear current TAS recording");
+
+	Console()->Register("cl_tas_show_ghost", "i[show]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
+		static_cast<CTasPlayer *>(pUserData)->SetShowGhost(pResult->GetInteger(0) != 0);
+	}, this, "Show/hide TAS ghost");
+
+	Console()->Register("cl_tas_ghost_alpha", "f[alpha]", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
+		static_cast<CTasPlayer *>(pUserData)->SetGhostAlpha(pResult->GetFloat(0));
+	}, this, "Set TAS ghost alpha (0.0 - 1.0)");
 }
 
 void CTasPlayer::OnRender()
 {
-	RenderRecordingGhost();
+	RenderGhost();
 
 	if(!m_Active || !g_Config.m_ClTasHud)
 		return;
@@ -101,7 +132,7 @@ void CTasPlayer::OnRender()
 		m_Paused ? "PAUSE" : "PLAY",
 		m_CurrentTick,
 		TotalTicks(),
-		m_Speed,
+		m_TimeScale,
 		m_aFileName);
 
 	const float FontSize = 6.0f;
@@ -113,13 +144,13 @@ void CTasPlayer::OnRender()
 void CTasPlayer::OnReset()
 {
 	Stop(false);
-	StopRecording(false, false);
+	StopRecording(false);
 }
 
 void CTasPlayer::OnShutdown()
 {
 	Stop(false);
-	StopRecording(false, false);
+	StopRecording(false);
 }
 
 bool CTasPlayer::ApplyInput(CNetObj_PlayerInput &Input, int GameTick)
@@ -134,12 +165,6 @@ bool CTasPlayer::ApplyInput(CNetObj_PlayerInput &Input, int GameTick)
 
 	if(!m_Active)
 		return false;
-
-	if(m_Paused)
-	{
-		ApplyNeutralInput(Input);
-		return true;
-	}
 
 	if(!GameClient()->m_Snap.m_pLocalCharacter)
 	{
@@ -156,17 +181,19 @@ bool CTasPlayer::ApplyInput(CNetObj_PlayerInput &Input, int GameTick)
 		return true;
 	}
 
-	const float ClampedSpeed = std::clamp(m_Speed, 0.1f, 10.0f);
-	m_SpeedAccumulator += ClampedSpeed;
-
-	int StepsToAdvance = static_cast<int>(m_SpeedAccumulator);
-	if(StepsToAdvance > 0)
-		m_SpeedAccumulator -= StepsToAdvance;
-
-	const int StepsToProcess = StepsToAdvance > 0 ? StepsToAdvance : 1;
+	int StepsToAdvance = ConsumeAdvanceSteps(m_TimeScaleAccumulator);
 	CTasTick LastTick = m_vTicks[m_CurrentTick];
 
-	for(int i = 0; i < StepsToProcess; ++i)
+	if(StepsToAdvance == 0)
+	{
+		if(m_Paused || m_TimeScale <= 0.0f)
+			ApplyNeutralInput(Input);
+		else
+			ApplyTick(LastTick, &Input);
+		return true;
+	}
+
+	for(int i = 0; i < StepsToAdvance; ++i)
 	{
 		if(m_CurrentTick >= TotalTicks())
 			break;
@@ -184,11 +211,13 @@ bool CTasPlayer::ApplyInput(CNetObj_PlayerInput &Input, int GameTick)
 				++m_FireCounter;
 		}
 
-		if(StepsToAdvance > 0)
-		{
-			if(!AdvanceTick())
-				break;
-		}
+		CNetObj_PlayerInput GhostInput = {};
+		ApplyTick(Tick, &GhostInput);
+		GhostInput.m_Fire = m_FireCounter;
+		UpdateGhost(GhostInput);
+
+		if(!AdvanceTick())
+			break;
 	}
 
 	ApplyTick(LastTick, &Input);
@@ -199,9 +228,6 @@ bool CTasPlayer::ApplyInput(CNetObj_PlayerInput &Input, int GameTick)
 
 void CTasPlayer::ApplyRecordingInput(const CNetObj_PlayerInput &Input, int GameTick)
 {
-	if(m_Paused)
-		return;
-
 	if(!GameClient()->m_Snap.m_pLocalCharacter)
 	{
 		WarnNoLocalCharacter();
@@ -210,21 +236,14 @@ void CTasPlayer::ApplyRecordingInput(const CNetObj_PlayerInput &Input, int GameT
 
 	m_WarnedNoLocalCharacter = false;
 
-	const float ClampedSpeed = std::clamp(m_Speed, 0.1f, 10.0f);
-	m_RecordSpeedAccumulator += ClampedSpeed;
+	int StepsToAdvance = ConsumeAdvanceSteps(m_RecordTimeScaleAccumulator);
 
-	int StepsToAdvance = static_cast<int>(m_RecordSpeedAccumulator);
-	if(StepsToAdvance > 0)
-		m_RecordSpeedAccumulator -= StepsToAdvance;
+	if(StepsToAdvance == 0)
+		return;
 
-	const int StepsToProcess = StepsToAdvance > 0 ? StepsToAdvance : 1;
-
-	for(int i = 0; i < StepsToProcess; ++i)
+	for(int i = 0; i < StepsToAdvance; ++i)
 	{
-		if(StepsToAdvance > 0 && m_RecordGhostReady)
-			m_RecordGhostTick++;
-
-		UpdateRecordingGhost(Input);
+		UpdateGhost(Input);
 
 		CTasTick Tick{};
 		Tick.m_Direction = std::clamp(Input.m_Direction, -1, 1);
@@ -235,12 +254,9 @@ void CTasPlayer::ApplyRecordingInput(const CNetObj_PlayerInput &Input, int GameT
 		Tick.m_TargetX = Input.m_TargetX;
 		Tick.m_TargetY = Input.m_TargetY;
 		m_vTicks.push_back(Tick);
-
-		if(StepsToAdvance == 0)
-			break;
 	}
 
-	m_RecordInput = Input;
+	m_GhostInput = Input;
 	(void)GameTick;
 }
 
@@ -353,22 +369,26 @@ bool CTasPlayer::Load(const char *pFilename)
 
 bool CTasPlayer::RecordingGhostPosition(vec2 &Pos) const
 {
-	if(!m_Recording || !m_RecordGhostReady)
+	if(!m_Recording || !m_GhostReady)
 		return false;
 
-	Pos = vec2(m_RecordCurChar.m_X, m_RecordCurChar.m_Y);
+	Pos = vec2(m_GhostCurChar.m_X, m_GhostCurChar.m_Y);
 	return true;
 }
 
 void CTasPlayer::Start()
 {
-	StopRecording(false, false);
+	StopRecording(false);
 	ResetPlaybackState();
 	m_Active = true;
 	m_Paused = false;
+	m_TimeScaleAccumulator = 0.0f;
+	m_PendingSteps = 0;
+	m_GhostReady = false;
+	ResetGhostState();
 
 	char aBuf[256];
-	str_format(aBuf, sizeof(aBuf), "TAS: playing %s, ticks=%d, speed=%.2f", m_aFileName, TotalTicks(), m_Speed);
+	str_format(aBuf, sizeof(aBuf), "TAS: playing %s, ticks=%d, timescale=%.2f", m_aFileName, TotalTicks(), m_TimeScale);
 	AddChatLine(aBuf);
 }
 
@@ -379,7 +399,8 @@ void CTasPlayer::Stop(bool PrintMessage)
 
 	m_Active = false;
 	m_Paused = false;
-	m_SpeedAccumulator = 0.0f;
+	m_TimeScaleAccumulator = 0.0f;
+	m_PendingSteps = 0;
 	m_CurrentTick = 0;
 	m_FireCounter = 0;
 	m_vTicks.clear();
@@ -392,25 +413,36 @@ void CTasPlayer::Stop(bool PrintMessage)
 		AddChatLine("TAS: stopped");
 }
 
-void CTasPlayer::TogglePause()
+void CTasPlayer::SetPaused(bool Paused)
 {
 	if(!m_Active && !m_Recording)
 		return;
 
-	m_Paused = !m_Paused;
+	if(m_Paused == Paused)
+		return;
+
+	m_Paused = Paused;
 	AddChatLine(m_Paused ? "TAS: paused" : "TAS: resumed");
 }
 
-void CTasPlayer::SetSpeed(float Speed)
+void CTasPlayer::SetTimeScale(float TimeScale)
 {
-	m_Speed = std::clamp(Speed, 0.1f, 10.0f);
+	m_TimeScale = std::clamp(TimeScale, 0.0f, 2.0f);
 
-	if(m_Active)
+	if(m_Active || m_Recording)
 	{
 		char aBuf[128];
-		str_format(aBuf, sizeof(aBuf), "TAS: speed set to %.2f", m_Speed);
+		str_format(aBuf, sizeof(aBuf), "TAS: timescale set to %.2f", m_TimeScale);
 		AddChatLine(aBuf);
 	}
+}
+
+void CTasPlayer::Step()
+{
+	if(!m_Active && !m_Recording)
+		return;
+
+	++m_PendingSteps;
 }
 
 bool CTasPlayer::Seek(int Tick)
@@ -437,26 +469,20 @@ void CTasPlayer::PrintInfo() const
 	}
 
 	char aBuf[256];
-	str_format(aBuf, sizeof(aBuf), "TAS: file=%s version=%d map=%s ticks=%d current=%d speed=%.2f",
+	str_format(aBuf, sizeof(aBuf), "TAS: file=%s version=%d map=%s ticks=%d current=%d timescale=%.2f",
 		m_aFileName[0] ? m_aFileName : "<none>",
 		m_Version,
 		m_aMapName[0] ? m_aMapName : "<none>",
 		TotalTicks(),
 		m_CurrentTick,
-		m_Speed);
+		m_TimeScale);
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aBuf);
 }
 
-void CTasPlayer::StartRecord(const char *pFilename)
+void CTasPlayer::StartRecord()
 {
-	if(!pFilename || pFilename[0] == '\0')
-	{
-		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS: missing filename");
-		return;
-	}
-
 	Stop(false);
-	StopRecording(false, false);
+	StopRecording(false);
 
 	if(!GameClient() || !GameClient()->m_Snap.m_pLocalCharacter)
 	{
@@ -464,33 +490,61 @@ void CTasPlayer::StartRecord(const char *pFilename)
 		return;
 	}
 
-	str_copy(m_aRecordFileName, pFilename, sizeof(m_aRecordFileName));
+	m_aRecordFileName[0] = '\0';
 	str_copy(m_aMapName, Client()->GetCurrentMap(), sizeof(m_aMapName));
 
 	m_vTicks.clear();
 	m_Version = 1;
 	m_Recording = true;
 	m_Paused = false;
-	m_RecordSpeedAccumulator = 0.0f;
-	m_RecordGhostTick = 0;
-	m_RecordAttackTick = 0;
-	m_RecordGhostReady = false;
-	m_RecordInput = {};
-	m_RecordPrevChar = {};
-	m_RecordCurChar = {};
+	m_RecordTimeScaleAccumulator = 0.0f;
+	m_PendingSteps = 0;
+	m_GhostTick = 0;
+	m_GhostAttackTick = 0;
+	m_GhostReady = false;
+	m_GhostInput = {};
+	m_GhostPrevChar = {};
+	m_GhostCurChar = {};
 
-	ResetRecordingState();
+	ResetGhostState();
 
 	char aBuf[256];
-	str_format(aBuf, sizeof(aBuf), "TAS: recording to %s (speed %.2f)", m_aRecordFileName, m_Speed);
+	str_format(aBuf, sizeof(aBuf), "TAS: recording (timescale %.2f)", m_TimeScale);
 	AddChatLine(aBuf);
+}
+
+void CTasPlayer::ClearRecording()
+{
+	m_vTicks.clear();
+	m_CurrentTick = 0;
+	m_FireCounter = 0;
+	m_RecordTimeScaleAccumulator = 0.0f;
+	m_PendingSteps = 0;
+	m_GhostTick = 0;
+	m_GhostAttackTick = 0;
+	m_GhostReady = false;
+	m_GhostInput = {};
+	m_GhostPrevChar = {};
+	m_GhostCurChar = {};
+	ResetGhostState();
+	AddChatLine("TAS: recording cleared");
+}
+
+void CTasPlayer::SetShowGhost(bool Show)
+{
+	m_ShowGhost = Show;
+}
+
+void CTasPlayer::SetGhostAlpha(float Alpha)
+{
+	m_GhostAlpha = std::clamp(Alpha, 0.0f, 1.0f);
 }
 
 void CTasPlayer::ResetPlaybackState()
 {
 	m_CurrentTick = 0;
 	m_FireCounter = 0;
-	m_SpeedAccumulator = 0.0f;
+	m_TimeScaleAccumulator = 0.0f;
 	m_WarnedNoLocalCharacter = false;
 }
 
@@ -514,6 +568,11 @@ void CTasPlayer::ApplyNeutralInput(CNetObj_PlayerInput &Input)
 	if((Input.m_Fire & 1) != 0)
 		Input.m_Fire++;
 	Input.m_Fire &= INPUT_STATE_MASK;
+	Input.m_WantedWeapon = 0;
+	Input.m_NextWeapon = 0;
+	Input.m_PrevWeapon = 0;
+	Input.m_TargetX = 0;
+	Input.m_TargetY = 0;
 }
 
 bool CTasPlayer::AdvanceTick()
@@ -560,31 +619,24 @@ void CTasPlayer::WarnNoLocalCharacter()
 	AddChatLine("TAS: local character missing, input suppressed");
 }
 
-void CTasPlayer::StopRecording(bool SaveFile, bool PrintMessage)
+void CTasPlayer::StopRecording(bool PrintMessage)
 {
 	if(!m_Recording)
 		return;
 
 	m_Recording = false;
 	m_Paused = false;
+	m_PendingSteps = 0;
 
-	if(SaveFile && m_aRecordFileName[0] != '\0')
-	{
-		if(!SaveRecording(m_aRecordFileName))
-			AddChatLine("TAS: failed to save recording");
-		else if(PrintMessage)
-			AddChatLine("TAS: recording saved");
-	}
-	else if(PrintMessage)
-	{
+	if(PrintMessage)
 		AddChatLine("TAS: recording stopped");
-	}
-
-	m_aRecordFileName[0] = '\0';
 }
 
-bool CTasPlayer::SaveRecording(const char *pFilename) const
+bool CTasPlayer::SaveRecordingToFile(const char *pFilename) const
 {
+	if(!pFilename || pFilename[0] == '\0')
+		return false;
+
 	IOHANDLE File = Storage()->OpenFile(pFilename, IOFLAG_WRITE, IStorage::TYPE_SAVE_OR_ABSOLUTE);
 	if(!File)
 		return false;
@@ -621,58 +673,64 @@ bool CTasPlayer::SaveRecording(const char *pFilename) const
 	return true;
 }
 
-void CTasPlayer::UpdateRecordingGhost(const CNetObj_PlayerInput &Input)
+void CTasPlayer::UpdateGhost(const CNetObj_PlayerInput &Input)
 {
-	if(!m_RecordGhostReady)
+	if(!m_GhostReady)
 	{
-		m_RecordGhostReady = true;
+		m_GhostReady = true;
 		const CCharacterCore &BaseCore = GameClient()->m_PredictedChar;
-		m_RecordCore = BaseCore;
-		m_RecordCore.m_Id = 0;
-		m_RecordCore.m_Input = Input;
-		m_RecordCore.m_HookTeleBase = BaseCore.m_Pos;
-		m_RecordCore.m_TriggeredEvents = 0;
-		m_RecordCore.SetCoreWorld(&m_RecordWorld, Collision(), &GameClient()->m_Teams);
-		m_RecordWorld.m_apCharacters[0] = &m_RecordCore;
-		m_RecordWorld.m_pPrng = &m_RecordPrng;
+		m_GhostCore = BaseCore;
+		m_GhostCore.m_Id = 0;
+		m_GhostCore.m_Input = Input;
+		m_GhostCore.m_HookTeleBase = BaseCore.m_Pos;
+		m_GhostCore.m_TriggeredEvents = 0;
+		m_GhostCore.SetCoreWorld(&m_GhostWorld, Collision(), &GameClient()->m_Teams);
+		m_GhostWorld.m_apCharacters[0] = &m_GhostCore;
+		m_GhostWorld.m_pPrng = &m_GhostPrng;
 		uint64_t aSeed[2] = {static_cast<uint64_t>(time_get()), static_cast<uint64_t>(time_get() ^ 0x9e3779b97f4a7c15ULL)};
-		m_RecordPrng.Seed(aSeed);
-		m_RecordGhostTick = GameClient()->m_Snap.m_pLocalCharacter->m_Tick;
-		m_RecordAttackTick = m_RecordGhostTick;
-		BuildRecordNetChar(m_RecordCurChar, m_RecordCore);
-		m_RecordPrevChar = m_RecordCurChar;
+		m_GhostPrng.Seed(aSeed);
+		if(GameClient()->m_Snap.m_pLocalCharacter)
+			m_GhostTick = GameClient()->m_Snap.m_pLocalCharacter->m_Tick;
+		else
+			m_GhostTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		m_GhostAttackTick = m_GhostTick;
+		m_GhostInput = Input;
+		BuildGhostNetChar(m_GhostCurChar, m_GhostCore);
+		m_GhostPrevChar = m_GhostCurChar;
 		return;
 	}
 
-	m_RecordPrevChar = m_RecordCurChar;
-	m_RecordCore.m_Input = Input;
+	m_GhostPrevChar = m_GhostCurChar;
+	m_GhostCore.m_Input = Input;
 
-	const int PrevFire = m_RecordInput.m_Fire & INPUT_STATE_MASK;
+	const int PrevFire = m_GhostInput.m_Fire & INPUT_STATE_MASK;
 	const int CurFire = Input.m_Fire & INPUT_STATE_MASK;
 	const CInputCount FireCount = CountInput(PrevFire, CurFire);
 	if(FireCount.m_Presses > 0)
-		m_RecordAttackTick = m_RecordGhostTick;
+		m_GhostAttackTick = m_GhostTick;
 
-	m_RecordCore.Tick(true);
-	m_RecordCore.Move();
-	m_RecordCore.Quantize();
+	m_GhostCore.Tick(true);
+	m_GhostCore.Move();
+	m_GhostCore.Quantize();
+	++m_GhostTick;
 
-	BuildRecordNetChar(m_RecordCurChar, m_RecordCore);
-	m_RecordCurChar.m_AttackTick = m_RecordAttackTick;
-	m_RecordCurChar.m_Tick = m_RecordGhostTick;
-	m_RecordPrevChar.m_Tick = m_RecordGhostTick - 1;
+	BuildGhostNetChar(m_GhostCurChar, m_GhostCore);
+	m_GhostCurChar.m_AttackTick = m_GhostAttackTick;
+	m_GhostCurChar.m_Tick = m_GhostTick;
+	m_GhostPrevChar.m_Tick = m_GhostTick - 1;
+	m_GhostInput = Input;
 }
 
-void CTasPlayer::ResetRecordingState()
+void CTasPlayer::ResetGhostState()
 {
-	m_RecordWorld.m_pPrng = &m_RecordPrng;
-	for(auto &pChar : m_RecordWorld.m_apCharacters)
+	m_GhostWorld.m_pPrng = &m_GhostPrng;
+	for(auto &pChar : m_GhostWorld.m_apCharacters)
 		pChar = nullptr;
-	m_RecordWorld.m_vSwitchers.clear();
-	m_RecordCore.SetCoreWorld(&m_RecordWorld, Collision(), &GameClient()->m_Teams);
+	m_GhostWorld.m_vSwitchers.clear();
+	m_GhostCore.SetCoreWorld(&m_GhostWorld, Collision(), &GameClient()->m_Teams);
 }
 
-void CTasPlayer::BuildRecordNetChar(CNetObj_Character &Out, const CCharacterCore &Core) const
+void CTasPlayer::BuildGhostNetChar(CNetObj_Character &Out, const CCharacterCore &Core) const
 {
 	mem_zero(&Out, sizeof(Out));
 	Out.m_X = round_to_int(Core.m_Pos.x);
@@ -685,13 +743,13 @@ void CTasPlayer::BuildRecordNetChar(CNetObj_Character &Out, const CCharacterCore
 	Out.m_HookState = Core.m_HookState;
 	Out.m_HookX = round_to_int(Core.m_HookPos.x);
 	Out.m_HookY = round_to_int(Core.m_HookPos.y);
-	Out.m_AttackTick = m_RecordAttackTick;
-	Out.m_Tick = m_RecordGhostTick;
+	Out.m_AttackTick = m_GhostAttackTick;
+	Out.m_Tick = m_GhostTick;
 }
 
-void CTasPlayer::RenderRecordingGhost()
+void CTasPlayer::RenderGhost()
 {
-	if(!m_Recording || !m_RecordGhostReady)
+	if(!m_ShowGhost || !m_GhostReady || (!m_Recording && !m_Active))
 		return;
 
 	if(GameClient()->m_Snap.m_LocalClientId < 0)
@@ -700,6 +758,36 @@ void CTasPlayer::RenderRecordingGhost()
 	const CTeeRenderInfo *pRenderInfo = &GameClient()->m_aClients[GameClient()->m_Snap.m_LocalClientId].m_RenderInfo;
 	const float IntraTick = Client()->PredIntraGameTick(g_Config.m_ClDummy);
 
-	GameClient()->m_Players.RenderHook(&m_RecordPrevChar, &m_RecordCurChar, pRenderInfo, -2, IntraTick);
-	GameClient()->m_Players.RenderPlayer(&m_RecordPrevChar, &m_RecordCurChar, pRenderInfo, -2, IntraTick);
+	const int PreviousAlpha = g_Config.m_ClRaceGhostAlpha;
+	g_Config.m_ClRaceGhostAlpha = round_to_int(m_GhostAlpha * 100.0f);
+	GameClient()->m_Players.RenderHook(&m_GhostPrevChar, &m_GhostCurChar, pRenderInfo, -2, IntraTick);
+	GameClient()->m_Players.RenderPlayer(&m_GhostPrevChar, &m_GhostCurChar, pRenderInfo, -2, IntraTick);
+	g_Config.m_ClRaceGhostAlpha = PreviousAlpha;
+}
+
+int CTasPlayer::ConsumeAdvanceSteps(float &Accumulator)
+{
+	if(m_Paused || m_TimeScale <= 0.0f)
+	{
+		if(m_PendingSteps > 0)
+		{
+			--m_PendingSteps;
+			return 1;
+		}
+		return 0;
+	}
+
+	const float ClampedScale = std::clamp(m_TimeScale, 0.0f, 2.0f);
+	Accumulator += ClampedScale;
+	int Steps = static_cast<int>(Accumulator);
+	if(Steps > 0)
+		Accumulator -= Steps;
+
+	if(Steps <= 0 && m_PendingSteps > 0)
+	{
+		--m_PendingSteps;
+		Steps = 1;
+	}
+
+	return Steps;
 }
