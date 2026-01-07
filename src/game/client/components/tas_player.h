@@ -30,7 +30,7 @@ public:
 	bool IsRecording() const { return m_Recording; }
 	int CurrentTick() const { return m_CurrentTick; }
 	int TotalTicks() const { return static_cast<int>(m_vTicks.size()); }
-	float Speed() const { return m_Speed; }
+	float TimeScale() const { return m_TimeScale; }
 	const char *FileName() const { return m_aFileName; }
 	const char *MapName() const { return m_aMapName; }
 	int Version() const { return m_Version; }
@@ -39,11 +39,17 @@ public:
 	bool Load(const char *pFilename);
 	void Start();
 	void Stop(bool PrintMessage = true);
-	void TogglePause();
-	void SetSpeed(float Speed);
+	void SetPaused(bool Paused);
+	void SetTimeScale(float TimeScale);
+	void Step();
 	bool Seek(int Tick);
 	void PrintInfo() const;
-	void StartRecord(const char *pFilename);
+	void StartRecord();
+	void StopRecording(bool PrintMessage = true);
+	bool SaveRecordingToFile(const char *pFilename) const;
+	void ClearRecording();
+	void SetShowGhost(bool Show);
+	void SetGhostAlpha(float Alpha);
 
 private:
 	struct CTasTick
@@ -65,21 +71,24 @@ private:
 	bool m_Active = false;
 	bool m_Paused = false;
 	bool m_Recording = false;
-	float m_Speed = 1.0f;
-	float m_SpeedAccumulator = 0.0f;
-	float m_RecordSpeedAccumulator = 0.0f;
+	bool m_ShowGhost = true;
+	float m_GhostAlpha = 0.35f;
+	float m_TimeScale = 1.0f;
+	float m_TimeScaleAccumulator = 0.0f;
+	float m_RecordTimeScaleAccumulator = 0.0f;
+	int m_PendingSteps = 0;
 	int m_CurrentTick = 0;
 	int m_FireCounter = 0;
 	bool m_WarnedNoLocalCharacter = false;
-	int m_RecordGhostTick = 0;
-	int m_RecordAttackTick = 0;
-	bool m_RecordGhostReady = false;
-	CNetObj_PlayerInput m_RecordInput = {};
-	CNetObj_Character m_RecordPrevChar = {};
-	CNetObj_Character m_RecordCurChar = {};
-	CPrng m_RecordPrng;
-	CWorldCore m_RecordWorld;
-	CCharacterCore m_RecordCore;
+	int m_GhostTick = 0;
+	int m_GhostAttackTick = 0;
+	bool m_GhostReady = false;
+	CNetObj_PlayerInput m_GhostInput = {};
+	CNetObj_Character m_GhostPrevChar = {};
+	CNetObj_Character m_GhostCurChar = {};
+	CPrng m_GhostPrng;
+	CWorldCore m_GhostWorld;
+	CCharacterCore m_GhostCore;
 
 	void ResetPlaybackState();
 	void ApplyTick(const CTasTick &Tick, CNetObj_PlayerInput *pInput);
@@ -88,12 +97,11 @@ private:
 	bool AdvanceTick();
 	void AddChatLine(const char *pMessage) const;
 	void WarnNoLocalCharacter();
-	void StopRecording(bool SaveFile = true, bool PrintMessage = true);
-	bool SaveRecording(const char *pFilename) const;
-	void UpdateRecordingGhost(const CNetObj_PlayerInput &Input);
-	void ResetRecordingState();
-	void BuildRecordNetChar(CNetObj_Character &Out, const CCharacterCore &Core) const;
-	void RenderRecordingGhost();
+	void UpdateGhost(const CNetObj_PlayerInput &Input);
+	void ResetGhostState();
+	void BuildGhostNetChar(CNetObj_Character &Out, const CCharacterCore &Core) const;
+	void RenderGhost();
+	int ConsumeAdvanceSteps(float &Accumulator);
 };
 
 #endif
