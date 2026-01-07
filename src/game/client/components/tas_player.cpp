@@ -351,6 +351,15 @@ bool CTasPlayer::Load(const char *pFilename)
 	return true;
 }
 
+bool CTasPlayer::RecordingGhostPosition(vec2 &Pos) const
+{
+	if(!m_Recording || !m_RecordGhostReady)
+		return false;
+
+	Pos = vec2(m_RecordCurChar.m_X, m_RecordCurChar.m_Y);
+	return true;
+}
+
 void CTasPlayer::Start()
 {
 	StopRecording(false, false);

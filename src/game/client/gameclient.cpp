@@ -754,6 +754,13 @@ void CGameClient::UpdatePositions()
 			vec2(m_Snap.m_pLocalCharacter->m_X, m_Snap.m_pLocalCharacter->m_Y), Client()->IntraGameTick(g_Config.m_ClDummy));
 	}
 
+	if(!m_Snap.m_SpecInfo.m_Active)
+	{
+		vec2 GhostPos;
+		if(m_TasPlayer.RecordingGhostPosition(GhostPos))
+			m_LocalCharacterPos = GhostPos;
+	}
+
 	// spectator position
 	if(m_Snap.m_SpecInfo.m_Active)
 	{
