@@ -595,6 +595,23 @@ protected:
 
 	static CUi::EPopupMenuFunctionResult PopupMapPicker(void *pContext, CUIRect View, bool Active);
 
+	class CTasListItem
+	{
+	public:
+		char m_aFilename[IO_MAX_PATH_LENGTH];
+	};
+	class CPopupTasPickerContext
+	{
+	public:
+		std::vector<CTasListItem> m_vFiles;
+		void TasListPopulate();
+		static int TasListFetchCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser);
+		CMenus *m_pMenus;
+		int m_Selection;
+	};
+
+	static CUi::EPopupMenuFunctionResult PopupTasPicker(void *pContext, CUIRect View, bool Active);
+
 	void SetNeedSendInfo();
 	void UpdateColors();
 

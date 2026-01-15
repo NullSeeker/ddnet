@@ -221,6 +221,7 @@ MACRO_CONFIG_INT(UiPage, ui_page, 6, 6, 13, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Inte
 MACRO_CONFIG_INT(ClTasMode, cl_tas_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TAS mode (0 = default, 1 = binds)")
 MACRO_CONFIG_INT(ClTasTps, cl_tas_tps, 50, 1, 1000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TAS ticks per second")
 MACRO_CONFIG_INT(ClTasFreezeInput, cl_tas_freeze_input, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Freeze real input while in TAS mode")
+MACRO_CONFIG_STR(ClTasFile, cl_tas_file, IO_MAX_PATH_LENGTH, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Selected TAS file")
 MACRO_CONFIG_INT(UiSettingsPage, ui_settings_page, 0, 0, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Interface settings page")
 MACRO_CONFIG_INT(UiToolboxPage, ui_toolbox_page, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Toolbox page")
 MACRO_CONFIG_STR(UiServerAddress, ui_server_address, 1024, "localhost:8303", CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Interface server address")

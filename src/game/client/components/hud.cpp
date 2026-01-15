@@ -637,6 +637,33 @@ void CHud::RenderCursor()
 	Graphics()->RenderQuadContainerAsSprite(m_HudQuadContainerIndex, m_aCursorOffset[CurWeapon], TargetPos.x, TargetPos.y);
 }
 
+void CHud::RenderTasMarkers()
+{
+	if(!GameClient()->m_Tas.IsActive() || !GameClient()->m_Tas.HasRecording())
+		return;
+
+	const vec2 Center = GameClient()->m_Camera.m_Center;
+	float aPoints[4];
+	Graphics()->MapScreenToWorld(Center.x, Center.y, 100.0f, 100.0f, 100.0f, 0, 0, Graphics()->ScreenAspect(), 1.0f, aPoints);
+	Graphics()->MapScreen(aPoints[0], aPoints[1], aPoints[2], aPoints[3]);
+
+	const vec2 StartPos = GameClient()->m_Tas.SpawnPos();
+	const vec2 EndPos = GameClient()->m_Tas.EndPos();
+
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+	Graphics()->SetColor(0.2f, 1.0f, 0.2f, 0.75f);
+	Graphics()->DrawCircle(StartPos.x, StartPos.y, 18.0f, 32);
+	Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.6f);
+	Graphics()->DrawCircle(StartPos.x, StartPos.y, 12.0f, 32);
+
+	Graphics()->SetColor(1.0f, 0.2f, 0.2f, 0.75f);
+	Graphics()->DrawCircle(EndPos.x, EndPos.y, 18.0f, 32);
+	Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.6f);
+	Graphics()->DrawCircle(EndPos.x, EndPos.y, 12.0f, 32);
+	Graphics()->QuadsEnd();
+}
+
 void CHud::PrepareAmmoHealthAndArmorQuads()
 {
 	float x = 5;
@@ -1725,6 +1752,7 @@ void CHud::OnRender()
 		if(g_Config.m_ClShowRecord)
 			RenderRecord();
 	}
+	RenderTasMarkers();
 	RenderCursor();
 }
 

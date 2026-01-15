@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <engine/client.h>
 #include <engine/shared/config.h>
+#include <engine/storage.h>
 
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
@@ -17,6 +18,35 @@
 namespace
 {
 constexpr int TAS_INPUT_DUMMY = 0;
+constexpr int TAS_FILE_VERSION = 1;
+constexpr char TAS_MAGIC[] = {'T', 'A', 'S', '1'};
+
+struct STasFileHeader
+{
+	char m_aMagic[sizeof(TAS_MAGIC)];
+	int m_Version;
+	int m_NumTicks;
+	float m_SpawnX;
+	float m_SpawnY;
+};
+
+bool NormalizeTasFilename(const char *pInput, char *pOutput, size_t OutputSize)
+{
+	if(!pInput || pInput[0] == '\0')
+		return false;
+
+	str_copy(pOutput, pInput, OutputSize);
+	if(!str_endswith(pOutput, ".tas"))
+		str_append(pOutput, ".tas", OutputSize);
+	return true;
+}
+
+constexpr const char *TAS_DIR = "data/tas";
+
+void BuildTasPath(const char *pFilename, char *pBuffer, size_t BufferSize)
+{
+	str_format(pBuffer, BufferSize, "%s/%s", TAS_DIR, pFilename);
+}
 } // namespace
 
 CTAS::CTAS() :
@@ -28,12 +58,17 @@ CTAS::CTAS() :
 	m_LastTickTime(0),
 	m_TickRemainder(0.0),
 	m_SpawnPos(0.0f, 0.0f),
-	m_pCharacter(nullptr)
+	m_pCharacter(nullptr),
+	m_UseSpawnPosOverride(false)
 {
+	m_aSelectedFile[0] = '\0';
+	m_LiveInput = {};
 }
 
 void CTAS::OnInit()
 {
+	if(g_Config.m_ClTasFile[0] != '\0')
+		SetSelectedFile(g_Config.m_ClTasFile);
 	ResetWorld();
 }
 
@@ -42,7 +77,8 @@ void CTAS::OnUpdate()
 	if(!m_Active)
 		return;
 
-	ApplyInputFreeze();
+	m_LiveInput = GameClient()->m_Controls.m_aInputData[g_Config.m_ClDummy];
+	ApplyInputFreeze(GameClient()->m_Controls);
 	UpdateAutoTicks();
 }
 
@@ -56,6 +92,9 @@ void CTAS::OnConsoleInit()
 	Console()->Register("tas_clear", "", CFGFLAG_CLIENT, ConTasClear, this, "Clear TAS recording");
 	Console()->Register("tas_forward", "", CFGFLAG_CLIENT, ConTasForward, this, "Advance TAS sandbox by one tick");
 	Console()->Register("tas_rewind", "", CFGFLAG_CLIENT, ConTasRewind, this, "Rewind TAS sandbox by one tick");
+	Console()->Register("tas_save", "s[name]", CFGFLAG_CLIENT, ConTasSave, this, "Save TAS recording (default: selected file)");
+	Console()->Register("tas_load", "s[name]", CFGFLAG_CLIENT, ConTasLoad, this, "Load TAS recording (default: selected file)");
+	Console()->Register("tas_list", "", CFGFLAG_CLIENT, ConTasList, this, "List TAS recordings in data/tas");
 }
 
 void CTAS::Enter()
@@ -83,6 +122,7 @@ void CTAS::Record()
 	m_vRecording.clear();
 	m_vHistory.clear();
 	m_Tick = 0;
+	m_UseSpawnPosOverride = false;
 	ResetWorld();
 }
 
@@ -134,6 +174,7 @@ void CTAS::Clear()
 	m_vHistory.clear();
 	m_PlayIndex = 0;
 	m_Tick = 0;
+	m_UseSpawnPosOverride = false;
 	if(m_Active)
 	{
 		m_Status = EStatus::IDLE;
@@ -186,6 +227,30 @@ const char *CTAS::ModeName() const
 	return g_Config.m_ClTasMode == 0 ? "Default" : "Binds";
 }
 
+void CTAS::SetSelectedFile(const char *pFilename)
+{
+	if(!pFilename || pFilename[0] == '\0')
+	{
+		ClearSelectedFile();
+		return;
+	}
+	str_copy(m_aSelectedFile, pFilename, sizeof(m_aSelectedFile));
+	str_copy(g_Config.m_ClTasFile, pFilename, sizeof(g_Config.m_ClTasFile));
+}
+
+void CTAS::ClearSelectedFile()
+{
+	m_aSelectedFile[0] = '\0';
+	g_Config.m_ClTasFile[0] = '\0';
+}
+
+vec2 CTAS::EndPos() const
+{
+	if(m_vRecording.empty())
+		return m_SpawnPos;
+	return m_vRecording.back().m_Core.m_Pos;
+}
+
 const char *CTAS::StatusName(EStatus Status) const
 {
 	switch(Status)
@@ -231,9 +296,12 @@ void CTAS::ResetWorld()
 	for(int i = 0; i < TuneZone::NUM; ++i)
 		m_aTuningList[i] = GameClient()->GetTuning(i) ? *GameClient()->GetTuning(i) : CTuningParams();
 
-	m_SpawnPos = GameClient()->m_LocalCharacterPos;
-	if(length(m_SpawnPos) < 0.1f)
-		m_SpawnPos = vec2(0.0f, 0.0f);
+	if(!m_UseSpawnPosOverride)
+	{
+		m_SpawnPos = GameClient()->m_LocalCharacterPos;
+		if(length(m_SpawnPos) < 0.1f)
+			m_SpawnPos = vec2(0.0f, 0.0f);
+	}
 
 	CNetObj_Character CharObj = {};
 	CharObj.m_X = round_to_int(m_SpawnPos.x);
@@ -332,25 +400,24 @@ void CTAS::UpdateAutoTicks()
 	}
 }
 
-void CTAS::ApplyInputFreeze() const
+void CTAS::ApplyInputFreeze(CControls &Controls)
 {
 	if(!m_Active)
 		return;
 
 	if(g_Config.m_ClTasFreezeInput)
 	{
-		CControls &Controls = GameClient()->m_Controls;
-		Controls.ResetInput(TAS_INPUT_DUMMY);
-		Controls.m_aInputData[TAS_INPUT_DUMMY].m_TargetX = 0;
-		Controls.m_aInputData[TAS_INPUT_DUMMY].m_TargetY = -1;
+		Controls.ResetInput(g_Config.m_ClDummy);
+		Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = 0;
+		Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = -1;
 	}
 }
 
 CNetObj_PlayerInput CTAS::GetLiveInput() const
 {
-	CNetObj_PlayerInput Input = {};
-	Input = GameClient()->m_Controls.m_aInputData[TAS_INPUT_DUMMY];
-	return Input;
+	if(m_Active)
+		return m_LiveInput;
+	return GameClient()->m_Controls.m_aInputData[g_Config.m_ClDummy];
 }
 
 void CTAS::SimulateToTick(int TargetTick)
@@ -398,6 +465,179 @@ bool CTAS::ShouldAutoTick() const
 		return false;
 
 	return true;
+}
+
+static const char *GetTasFilenameOrSelected(CTAS *pTas, IConsole::IResult *pResult, char *pOutName, size_t OutSize)
+{
+	const char *pArgName = pResult->NumArguments() > 0 ? pResult->GetString(0) : "";
+	if(pArgName && pArgName[0] != '\0')
+	{
+		if(NormalizeTasFilename(pArgName, pOutName, OutSize))
+		{
+			pTas->SetSelectedFile(pOutName);
+			return pOutName;
+		}
+		return nullptr;
+	}
+
+	if(pTas->SelectedFile()[0] != '\0')
+	{
+		if(NormalizeTasFilename(pTas->SelectedFile(), pOutName, OutSize))
+		{
+			pTas->SetSelectedFile(pOutName);
+			return pOutName;
+		}
+	}
+
+	if(g_Config.m_ClTasFile[0] != '\0')
+	{
+		if(NormalizeTasFilename(g_Config.m_ClTasFile, pOutName, OutSize))
+		{
+			pTas->SetSelectedFile(pOutName);
+			return pOutName;
+		}
+	}
+
+	return nullptr;
+}
+
+void CTAS::ConTasSave(IConsole::IResult *pResult, void *pUserData)
+{
+	CTAS *pThis = static_cast<CTAS *>(pUserData);
+	if(pThis->m_vRecording.empty())
+	{
+		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "No TAS recording to save");
+		return;
+	}
+
+	char aFilename[IO_MAX_PATH_LENGTH];
+	if(GetTasFilenameOrSelected(pThis, pResult, aFilename, sizeof(aFilename)) == nullptr)
+	{
+		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "No TAS filename specified");
+		return;
+	}
+
+	pThis->Storage()->CreateFolder("data", IStorage::TYPE_SAVE);
+	pThis->Storage()->CreateFolder(TAS_DIR, IStorage::TYPE_SAVE);
+
+	char aPath[IO_MAX_PATH_LENGTH];
+	BuildTasPath(aFilename, aPath, sizeof(aPath));
+	IOHANDLE File = pThis->Storage()->OpenFile(aPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+	{
+		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Failed to open TAS file for writing");
+		return;
+	}
+
+	STasFileHeader Header = {};
+	mem_copy(Header.m_aMagic, TAS_MAGIC, sizeof(Header.m_aMagic));
+	Header.m_Version = TAS_FILE_VERSION;
+	Header.m_NumTicks = static_cast<int>(pThis->m_vRecording.size());
+	Header.m_SpawnX = pThis->m_SpawnPos.x;
+	Header.m_SpawnY = pThis->m_SpawnPos.y;
+
+	io_write(File, &Header, sizeof(Header));
+	for(const auto &Tick : pThis->m_vRecording)
+	{
+		io_write(File, &Tick.m_Input, sizeof(Tick.m_Input));
+	}
+	io_close(File);
+
+	char aMsg[IO_MAX_PATH_LENGTH + 32];
+	str_format(aMsg, sizeof(aMsg), "Saved TAS to %s", aPath);
+	pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
+}
+
+void CTAS::ConTasLoad(IConsole::IResult *pResult, void *pUserData)
+{
+	CTAS *pThis = static_cast<CTAS *>(pUserData);
+
+	char aFilename[IO_MAX_PATH_LENGTH];
+	if(GetTasFilenameOrSelected(pThis, pResult, aFilename, sizeof(aFilename)) == nullptr)
+	{
+		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "No TAS filename specified");
+		return;
+	}
+
+	char aPath[IO_MAX_PATH_LENGTH];
+	BuildTasPath(aFilename, aPath, sizeof(aPath));
+
+	void *pData = nullptr;
+	unsigned DataSize = 0;
+	if(!pThis->Storage()->ReadFile(aPath, IStorage::TYPE_ALL, &pData, &DataSize))
+	{
+		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Failed to read TAS file");
+		return;
+	}
+
+	if(DataSize < sizeof(STasFileHeader))
+	{
+		free(pData);
+		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS file too small");
+		return;
+	}
+
+	const STasFileHeader *pHeader = static_cast<const STasFileHeader *>(pData);
+	if(mem_comp(pHeader->m_aMagic, TAS_MAGIC, sizeof(TAS_MAGIC)) != 0 || pHeader->m_Version != TAS_FILE_VERSION)
+	{
+		free(pData);
+		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Unsupported TAS file format");
+		return;
+	}
+
+	const size_t ExpectedSize = sizeof(STasFileHeader) + sizeof(CNetObj_PlayerInput) * static_cast<size_t>(pHeader->m_NumTicks);
+	if(DataSize < ExpectedSize)
+	{
+		free(pData);
+		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "TAS file is truncated");
+		return;
+	}
+
+	const CNetObj_PlayerInput *pInputs = reinterpret_cast<const CNetObj_PlayerInput *>(static_cast<const unsigned char *>(pData) + sizeof(STasFileHeader));
+	pThis->m_vRecording.clear();
+	pThis->m_vHistory.clear();
+	pThis->m_PlayIndex = 0;
+	pThis->m_Tick = 0;
+	pThis->m_Status = EStatus::IDLE;
+	pThis->m_StatusBeforePause = pThis->m_Status;
+	pThis->m_UseSpawnPosOverride = true;
+	pThis->m_SpawnPos = vec2(pHeader->m_SpawnX, pHeader->m_SpawnY);
+	pThis->ResetWorld();
+
+	for(int i = 0; i < pHeader->m_NumTicks; ++i)
+	{
+		pThis->TickOnce(pInputs[i], true, true);
+	}
+
+	pThis->m_vHistory.clear();
+	pThis->m_Tick = 0;
+	pThis->m_PlayIndex = 0;
+	pThis->ResetWorld();
+
+	free(pData);
+
+	char aMsg[IO_MAX_PATH_LENGTH + 32];
+	str_format(aMsg, sizeof(aMsg), "Loaded TAS from %s", aPath);
+	pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", aMsg);
+}
+
+void CTAS::ConTasList(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	CTAS *pThis = static_cast<CTAS *>(pUserData);
+	pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Available TAS files:");
+
+	auto Callback = [](const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser) {
+		CTAS *pTas = static_cast<CTAS *>(pUser);
+		if(IsDir)
+			return 0;
+		if(!str_endswith(pInfo->m_pName, ".tas"))
+			return 0;
+		pTas->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", pInfo->m_pName);
+		return 0;
+	};
+
+	pThis->Storage()->ListDirectoryInfo(IStorage::TYPE_ALL, TAS_DIR, Callback, pThis);
 }
 
 void CTAS::ConTasEnter(IConsole::IResult *pResult, void *pUserData)

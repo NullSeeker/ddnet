@@ -5,6 +5,8 @@
 
 #include <engine/console.h>
 
+#include <base/system.h>
+
 #include <game/client/component.h>
 #include <game/client/prediction/gameworld.h>
 #include <game/gamecore.h>
@@ -14,6 +16,7 @@
 #include <vector>
 
 class CCharacter;
+class CControls;
 
 class CTAS : public CComponent
 {
@@ -61,17 +64,23 @@ public:
 	const char *ModeName() const;
 	int CurrentTick() const { return m_Tick; }
 	int RecordedTicks() const { return static_cast<int>(m_vRecording.size()); }
+	vec2 SpawnPos() const { return m_SpawnPos; }
+	vec2 EndPos() const;
+	bool HasRecording() const { return !m_vRecording.empty(); }
+	const char *SelectedFile() const { return m_aSelectedFile; }
+	void SetSelectedFile(const char *pFilename);
 
 private:
 	void EnsureWorld();
 	void ResetWorld();
 	void TickOnce(const CNetObj_PlayerInput &Input, bool RecordInput, bool StoreHistory);
 	void UpdateAutoTicks();
-	void ApplyInputFreeze() const;
+	void ApplyInputFreeze(CControls &Controls);
 	CNetObj_PlayerInput GetLiveInput() const;
 	void SimulateToTick(int TargetTick);
 	bool ShouldAutoTick() const;
 	const char *StatusName(EStatus Status) const;
+	void ClearSelectedFile();
 
 	static void ConTasEnter(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasRecord(IConsole::IResult *pResult, void *pUserData);
@@ -81,6 +90,9 @@ private:
 	static void ConTasClear(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasForward(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasRewind(IConsole::IResult *pResult, void *pUserData);
+	static void ConTasSave(IConsole::IResult *pResult, void *pUserData);
+	static void ConTasLoad(IConsole::IResult *pResult, void *pUserData);
+	static void ConTasList(IConsole::IResult *pResult, void *pUserData);
 
 	bool m_Active;
 	EStatus m_Status;
@@ -90,6 +102,9 @@ private:
 	int64_t m_LastTickTime;
 	double m_TickRemainder;
 	vec2 m_SpawnPos;
+	char m_aSelectedFile[IO_MAX_PATH_LENGTH];
+	bool m_UseSpawnPosOverride;
+	CNetObj_PlayerInput m_LiveInput;
 
 	CGameWorld m_World;
 	CCharacter *m_pCharacter;
