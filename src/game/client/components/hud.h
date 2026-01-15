@@ -66,6 +66,7 @@ class CHud : public CComponent
 	float m_aPlayerPrevPosition[2];
 
 	void RenderCursor();
+	void RenderTasMarkers();
 
 	void RenderTextInfo();
 	void RenderConnectionWarning();

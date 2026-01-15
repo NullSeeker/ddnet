@@ -29,6 +29,7 @@
 #include <game/client/ui_scrollregion.h>
 #include <game/localization.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <memory>
@@ -3020,6 +3021,26 @@ void CMenus::RenderSettingsTAS(CUIRect MainView)
 		g_Config.m_ClTasFreezeInput ^= 1;
 
 	Right.HSplitTop(10.0f, nullptr, &Right);
+	CUIRect FileRow, FileLabel, FileInput, FileButton;
+	Right.HSplitTop(20.0f, &FileRow, &Right);
+	FileRow.VSplitLeft(70.0f, &FileLabel, &FileRow);
+	FileRow.VSplitRight(20.0f, &FileRow, &FileButton);
+	Ui()->DoLabel(&FileLabel, Localize("TAS file"), 14.0f, TEXTALIGN_ML);
+	static CLineInput s_TasFileInput(g_Config.m_ClTasFile, sizeof(g_Config.m_ClTasFile));
+	if(Ui()->DoEditBox(&s_TasFileInput, &FileRow, 14.0f))
+		GameClient()->m_Tas.SetSelectedFile(g_Config.m_ClTasFile);
+
+	static CButtonContainer s_TasFilePicker;
+	if(Ui()->DoButton_FontIcon(&s_TasFilePicker, FONT_ICON_FOLDER, 0, &FileButton, BUTTONFLAG_LEFT))
+	{
+		static SPopupMenuId s_PopupTasPickerId;
+		static CPopupTasPickerContext s_PopupTasPickerContext;
+		s_PopupTasPickerContext.m_pMenus = this;
+		s_PopupTasPickerContext.TasListPopulate();
+		Ui()->DoPopupMenu(&s_PopupTasPickerId, Ui()->MouseX(), Ui()->MouseY(), 300.0f, 250.0f, &s_PopupTasPickerContext, PopupTasPicker);
+	}
+
+	Right.HSplitTop(10.0f, nullptr, &Right);
 	char aBuf[128];
 	str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Status"), GameClient()->m_Tas.StatusName());
 	Right.HSplitTop(20.0f, &Label, &Right);
@@ -3032,6 +3053,81 @@ void CMenus::RenderSettingsTAS(CUIRect MainView)
 	str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("Recorded Ticks"), GameClient()->m_Tas.RecordedTicks());
 	Right.HSplitTop(20.0f, &Label, &Right);
 	Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
+}
+
+CUi::EPopupMenuFunctionResult CMenus::PopupTasPicker(void *pContext, CUIRect View, bool Active)
+{
+	CPopupTasPickerContext *pPopupContext = static_cast<CPopupTasPickerContext *>(pContext);
+	CMenus *pMenus = pPopupContext->m_pMenus;
+
+	static CListBox s_ListBox;
+	s_ListBox.SetActive(Active);
+	s_ListBox.DoStart(20.0f, pPopupContext->m_vFiles.size(), 1, 3, -1, &View, false);
+
+	int FileIndex = 0;
+	for(auto &File : pPopupContext->m_vFiles)
+	{
+		const CListboxItem Item = s_ListBox.DoNextItem(&File, FileIndex == pPopupContext->m_Selection);
+		FileIndex++;
+		if(!Item.m_Visible)
+			continue;
+
+		CUIRect Label, Icon;
+		Item.m_Rect.VSplitLeft(20.0f, &Icon, &Label);
+
+		pMenus->TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
+		pMenus->TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING);
+		pMenus->Ui()->DoLabel(&Icon, FONT_ICON_FILE, 12.0f, TEXTALIGN_ML);
+		pMenus->TextRender()->SetRenderFlags(0);
+		pMenus->TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
+
+		pMenus->Ui()->DoLabel(&Label, File.m_aFilename, 10.0f, TEXTALIGN_ML);
+	}
+
+	const int NewSelected = s_ListBox.DoEnd();
+	pPopupContext->m_Selection = NewSelected >= 0 ? NewSelected : -1;
+	if(s_ListBox.WasItemSelected() || s_ListBox.WasItemActivated())
+	{
+		if(pPopupContext->m_Selection < 0 || pPopupContext->m_Selection >= static_cast<int>(pPopupContext->m_vFiles.size()))
+			return CUi::POPUP_KEEP_OPEN;
+		const CTasListItem &SelectedItem = pPopupContext->m_vFiles[pPopupContext->m_Selection];
+		str_copy(g_Config.m_ClTasFile, SelectedItem.m_aFilename, sizeof(g_Config.m_ClTasFile));
+		pMenus->GameClient()->m_Tas.SetSelectedFile(g_Config.m_ClTasFile);
+		return CUi::POPUP_CLOSE_CURRENT;
+	}
+
+	return CUi::POPUP_KEEP_OPEN;
+}
+
+void CMenus::CPopupTasPickerContext::TasListPopulate()
+{
+	m_vFiles.clear();
+	m_pMenus->Storage()->ListDirectoryInfo(IStorage::TYPE_ALL, "data/tas", TasListFetchCallback, this);
+	std::stable_sort(m_vFiles.begin(), m_vFiles.end(), [](const CTasListItem &Lhs, const CTasListItem &Rhs) {
+		return str_comp_filenames(Lhs.m_aFilename, Rhs.m_aFilename) < 0;
+	});
+	m_Selection = -1;
+	for(size_t i = 0; i < m_vFiles.size(); ++i)
+	{
+		if(str_comp(m_vFiles[i].m_aFilename, g_Config.m_ClTasFile) == 0)
+		{
+			m_Selection = static_cast<int>(i);
+			break;
+		}
+	}
+}
+
+int CMenus::CPopupTasPickerContext::TasListFetchCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser)
+{
+	(void)StorageType;
+	CPopupTasPickerContext *pRealUser = static_cast<CPopupTasPickerContext *>(pUser);
+	if(IsDir || !str_endswith(pInfo->m_pName, ".tas"))
+		return 0;
+
+	CTasListItem Item;
+	str_copy(Item.m_aFilename, pInfo->m_pName, sizeof(Item.m_aFilename));
+	pRealUser->m_vFiles.emplace_back(Item);
+	return 0;
 }
 
 CUi::EPopupMenuFunctionResult CMenus::PopupMapPicker(void *pContext, CUIRect View, bool Active)
