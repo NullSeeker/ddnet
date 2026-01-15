@@ -1442,6 +1442,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		Localize("Graphics"),
 		Localize("Sound"),
 		Localize("DDNet"),
+		Localize("TAS"),
 		Localize("Assets")};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
@@ -1500,6 +1501,11 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_DDNET);
 		RenderSettingsDDNet(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_TAS)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_DDNET);
+		RenderSettingsTAS(MainView);
 	}
 	else if(g_Config.m_UiSettingsPage == SETTINGS_ASSETS)
 	{
@@ -2942,6 +2948,90 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 #endif
+}
+
+void CMenus::RenderSettingsTAS(CUIRect MainView)
+{
+	CUIRect Left, Right, Label, Button, Row;
+	MainView.VSplitMid(&Left, &Right, 20.0f);
+
+	Left.HSplitTop(30.0f, &Label, &Left);
+	Ui()->DoLabel(&Label, Localize("TAS Controls"), 20.0f, TEXTALIGN_ML);
+
+	Left.HSplitTop(10.0f, nullptr, &Left);
+	static CButtonContainer s_EnterButton;
+	Left.HSplitTop(24.0f, &Button, &Left);
+	if(DoButton_Menu(&s_EnterButton, Localize("Enter TAS"), 0, &Button))
+		GameClient()->m_Tas.Enter();
+
+	Left.HSplitTop(5.0f, nullptr, &Left);
+	static CButtonContainer s_RecordButton;
+	Left.HSplitTop(24.0f, &Button, &Left);
+	if(DoButton_Menu(&s_RecordButton, Localize("Record"), 0, &Button))
+		GameClient()->m_Tas.Record();
+
+	Left.HSplitTop(5.0f, nullptr, &Left);
+	static CButtonContainer s_StopButton;
+	Left.HSplitTop(24.0f, &Button, &Left);
+	if(DoButton_Menu(&s_StopButton, Localize("Stop"), 0, &Button))
+		GameClient()->m_Tas.Stop();
+
+	Left.HSplitTop(5.0f, nullptr, &Left);
+	static CButtonContainer s_PauseButton;
+	Left.HSplitTop(24.0f, &Button, &Left);
+	if(DoButton_Menu(&s_PauseButton, Localize("Pause"), 0, &Button))
+		GameClient()->m_Tas.Pause();
+
+	Left.HSplitTop(5.0f, nullptr, &Left);
+	static CButtonContainer s_PlayButton;
+	Left.HSplitTop(24.0f, &Button, &Left);
+	if(DoButton_Menu(&s_PlayButton, Localize("Play"), 0, &Button))
+		GameClient()->m_Tas.Play();
+
+	Left.HSplitTop(5.0f, nullptr, &Left);
+	static CButtonContainer s_ClearButton;
+	Left.HSplitTop(24.0f, &Button, &Left);
+	if(DoButton_Menu(&s_ClearButton, Localize("Clear"), 0, &Button))
+		GameClient()->m_Tas.Clear();
+
+	Right.HSplitTop(30.0f, &Label, &Right);
+	Ui()->DoLabel(&Label, Localize("TAS Settings"), 20.0f, TEXTALIGN_ML);
+
+	Right.HSplitTop(10.0f, nullptr, &Right);
+	Right.HSplitTop(20.0f, &Button, &Right);
+	Ui()->DoScrollbarOption(&g_Config.m_ClTasTps, &g_Config.m_ClTasTps, &Button, Localize("TPS"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE);
+
+	Right.HSplitTop(10.0f, nullptr, &Right);
+	Right.HSplitTop(20.0f, &Label, &Right);
+	Ui()->DoLabel(&Label, Localize("Mode"), 14.0f, TEXTALIGN_ML);
+
+	static CButtonContainer s_ModeDefault;
+	static CButtonContainer s_ModeBinds;
+	Right.HSplitTop(20.0f, &Row, &Right);
+	Row.VSplitMid(&Button, &Row, 10.0f);
+	if(DoButton_CheckBox(&s_ModeDefault, Localize("Default (auto tick)"), g_Config.m_ClTasMode == 0, &Button))
+		g_Config.m_ClTasMode = 0;
+	if(DoButton_CheckBox(&s_ModeBinds, Localize("Binds (manual)"), g_Config.m_ClTasMode == 1, &Row))
+		g_Config.m_ClTasMode = 1;
+
+	Right.HSplitTop(10.0f, nullptr, &Right);
+	Right.HSplitTop(20.0f, &Button, &Right);
+	if(DoButton_CheckBox(&g_Config.m_ClTasFreezeInput, Localize("Freeze real input"), g_Config.m_ClTasFreezeInput, &Button))
+		g_Config.m_ClTasFreezeInput ^= 1;
+
+	Right.HSplitTop(10.0f, nullptr, &Right);
+	char aBuf[128];
+	str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Status"), GameClient()->m_Tas.StatusName());
+	Right.HSplitTop(20.0f, &Label, &Right);
+	Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
+
+	str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("Current Tick"), GameClient()->m_Tas.CurrentTick());
+	Right.HSplitTop(20.0f, &Label, &Right);
+	Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
+
+	str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("Recorded Ticks"), GameClient()->m_Tas.RecordedTicks());
+	Right.HSplitTop(20.0f, &Label, &Right);
+	Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
 }
 
 CUi::EPopupMenuFunctionResult CMenus::PopupMapPicker(void *pContext, CUIRect View, bool Active)
