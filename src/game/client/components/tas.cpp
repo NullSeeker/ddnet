@@ -42,8 +42,8 @@ void CTAS::OnUpdate()
 	if(!m_Active)
 		return;
 
-	ApplyInputFreeze();
 	UpdateAutoTicks();
+	ApplyInputFreeze();
 }
 
 void CTAS::OnConsoleInit()
