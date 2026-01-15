@@ -67,6 +67,7 @@
 #include "components/statboard.h"
 #include "components/tooltips.h"
 #include "components/touch_controls.h"
+#include "components/tas.h"
 #include "components/voting.h"
 
 #include <vector>
@@ -163,6 +164,7 @@ public:
 	CEmoticon m_Emoticon;
 	CDamageInd m_DamageInd;
 	CTouchControls m_TouchControls;
+	CTAS m_Tas;
 	CVoting m_Voting;
 	CSpectator m_Spectator;
 
@@ -288,6 +290,7 @@ public:
 	CCollision *Collision() { return &m_Collision; }
 	const CCollision *Collision() const { return &m_Collision; }
 	const CRaceHelper *RaceHelper() const { return &m_RaceHelper; }
+	const CMapBugs *MapBugs() const { return &m_MapBugs; }
 	class IEditor *Editor() { return m_pEditor; }
 	class IFriends *Friends() { return m_pFriends; }
 	class IFriends *Foes() { return m_pFoes; }
