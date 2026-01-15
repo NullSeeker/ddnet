@@ -58,8 +58,8 @@ CTAS::CTAS() :
 	m_LastTickTime(0),
 	m_TickRemainder(0.0),
 	m_SpawnPos(0.0f, 0.0f),
-	m_pCharacter(nullptr),
-	m_UseSpawnPosOverride(false)
+	m_UseSpawnPosOverride(false),
+	m_pCharacter(nullptr)
 {
 	m_aSelectedFile[0] = '\0';
 	m_LiveInput = {};
@@ -78,7 +78,7 @@ void CTAS::OnUpdate()
 		return;
 
 	UpdateAutoTicks();
-	ApplyInputFreeze();
+	ApplyInputFreeze(GameClient()->m_Controls);
 }
 
 void CTAS::OnConsoleInit()
