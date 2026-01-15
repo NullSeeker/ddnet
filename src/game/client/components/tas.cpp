@@ -405,7 +405,7 @@ void CTAS::ApplyInputFreeze(CControls &Controls)
 	if(!m_Active)
 		return;
 
-	if(g_Config.m_ClTasFreezeInput)
+	if(g_Config.m_ClTasFreezeInput && m_Status != EStatus::RECORDING)
 	{
 		Controls.ResetInput(g_Config.m_ClDummy);
 		Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = 0;
