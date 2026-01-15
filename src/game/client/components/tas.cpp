@@ -77,9 +77,8 @@ void CTAS::OnUpdate()
 	if(!m_Active)
 		return;
 
-	m_LiveInput = GameClient()->m_Controls.m_aInputData[g_Config.m_ClDummy];
-	ApplyInputFreeze(GameClient()->m_Controls);
 	UpdateAutoTicks();
+	ApplyInputFreeze();
 }
 
 void CTAS::OnConsoleInit()
