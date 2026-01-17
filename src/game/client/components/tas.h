@@ -35,17 +35,17 @@ public:
 		BINDS,
 	};
 
-	enum class EPlaybackSpeed
-	{
-		REWIND_FAST = -4,
-		REWIND_MEDIUM = -2,
-		REWIND_SLOW = -1,
-		STOPPED = 0,
-		PLAYBACK_SLOW = 1,
-		PLAYBACK_MEDIUM = 2,
-		PLAYBACK_FAST = 4,
-	};
 
+ enum class EPlaybackSpeed
+        {
+                REWIND_FAST = -4,
+                REWIND_MEDIUM = -2,
+                REWIND_SLOW = -1,
+                STOPPED = 0,
+                PLAYBACK_SLOW = 1,
+                PLAYBACK_MEDIUM = 2,
+                PLAYBACK_FAST = 4,
+        };
 	struct STASTick
 	{
 		int m_Tick;
@@ -97,7 +97,12 @@ private:
 	bool ShouldAutoTick() const;
 	const char *StatusName(EStatus Status) const;
 	void ClearSelectedFile();
-	
+
+ // Time manipulation methods
+        void SetPlaybackSpeed(EPlaybackSpeed Speed);
+        EPlaybackSpeed GetPlaybackSpeed() const { return m_PlaybackSpeed; }
+        void AdjustTime(float Factor); // For slow motion/fast forward
+
 	static void ConTasEnter(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasStop(IConsole::IResult *pResult, void *pUserData);
@@ -115,6 +120,13 @@ private:
 	static void ConTasNormalSpeed(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasRewindBack(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasFastForward(IConsole::IResult *pResult, void *pUserData);
+
+ // New console commands for time manipulation
+        static void ConTasSpeedUp(IConsole::IResult *pResult, void *pUserData);
+        static void ConTasSlowDown(IConsole::IResult *pResult, void *pUserData);
+        static void ConTasNormalSpeed(IConsole::IResult *pResult, void *pUserData);
+        static void ConTasRewindBack(IConsole::IResult *pResult, void *pUserData);
+        static void ConTasFastForward(IConsole::IResult *pResult, void *pUserData);
 
 	bool m_Active;
 	EStatus m_Status;
@@ -134,11 +146,12 @@ private:
 
 	std::vector<STASTick> m_vRecording;
 	std::vector<STASTick> m_vHistory;
-	
-	// Time manipulation variables
-	EPlaybackSpeed m_PlaybackSpeed;
-	int64_t m_LastAdjustedTickTime;
-	double m_AdjustedTickRemainder;
+
+ // Time manipulation variables
+        EPlaybackSpeed m_PlaybackSpeed;
+        int64_t m_LastAdjustedTickTime;
+        double m_AdjustedTickRemainder;
+
 };
 
 #endif

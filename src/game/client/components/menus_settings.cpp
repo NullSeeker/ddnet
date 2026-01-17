@@ -3029,11 +3029,12 @@ void CMenus::RenderSettingsTAS(CUIRect MainView)
 	static char s_aTasFileName[IO_MAX_PATH_LENGTH];
 	static CLineInput s_TasFileInput(s_aTasFileName, sizeof(s_aTasFileName));
 	if(s_aTasFileName[0] == '\0' && g_Config.m_ClTasFile[0] != '\0')
-		str_copy(s_aTasFileName, g_Config.m_ClTasFile, sizeof(s_aTasFileName));
-	if(Ui()->DoEditBox(&s_TasFileInput, &FileRow, 14.0f))
-	{
-		str_copy(g_Config.m_ClTasFile, s_aTasFileName, sizeof(g_Config.m_ClTasFile));
-		GameClient()->m_Tas.SetSelectedFile(g_Config.m_ClTasFile);
+	    str_copy(s_aTasFileName, g_Config.m_ClTasFile, sizeof(s_aTasFileName));
+	if(Ui()->DoEditBox(&s_TasFileInput, &FileRow, 14.0f)) {
+
+	    str_copy(g_Config.m_ClTasFile, s_aTasFileName, sizeof(g_Config.m_ClTasFile));
+	    GameClient()->m_Tas.SetSelectedFile(g_Config.m_ClTasFile);
+
 	}
 
 	static CButtonContainer s_TasFilePicker;
@@ -3059,65 +3060,64 @@ void CMenus::RenderSettingsTAS(CUIRect MainView)
 	str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("Recorded Ticks"), GameClient()->m_Tas.RecordedTicks());
 	Right.HSplitTop(20.0f, &Label, &Right);
 	Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
+    const char *pSpeedText = "";
+        switch(GameClient()->m_Tas.GetPlaybackSpeed())
+        {
+                case CTAS::EPlaybackSpeed::REWIND_FAST:
+                        pSpeedText = Localize("Speed: << Fast Rewind");
+                        break;
+                case CTAS::EPlaybackSpeed::REWIND_MEDIUM:
+                        pSpeedText = Localize("Speed: < Medium Rewind");
+                        break;
+                case CTAS::EPlaybackSpeed::REWIND_SLOW:
+                        pSpeedText = Localize("Speed: < Slow Rewind");
+                        break;
+                case CTAS::EPlaybackSpeed::STOPPED:
+                        pSpeedText = Localize("Speed: Stopped");
+                        break;
+                case CTAS::EPlaybackSpeed::PLAYBACK_SLOW:
+                        pSpeedText = Localize("Speed: > Slow");
+                        break;
+                case CTAS::EPlaybackSpeed::PLAYBACK_MEDIUM:
+                        pSpeedText = Localize("Speed: > Normal");
+                        break;
+                case CTAS::EPlaybackSpeed::PLAYBACK_FAST:
+                        pSpeedText = Localize("Speed: >> Fast");
+                        break;
+        }
+        str_format(aBuf, sizeof(aBuf), "%s", pSpeedText);
+        Right.HSplitTop(20.0f, &Label, &Right);
+        Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
 
-	// Display current playback speed
-	const char *pSpeedText = "";
-	switch(GameClient()->m_Tas.GetPlaybackSpeed())
-	{
-		case CTAS::EPlaybackSpeed::REWIND_FAST:
-			pSpeedText = Localize("Speed: << Fast Rewind");
-			break;
-		case CTAS::EPlaybackSpeed::REWIND_MEDIUM:
-			pSpeedText = Localize("Speed: < Medium Rewind");
-			break;
-		case CTAS::EPlaybackSpeed::REWIND_SLOW:
-			pSpeedText = Localize("Speed: < Slow Rewind");
-			break;
-		case CTAS::EPlaybackSpeed::STOPPED:
-			pSpeedText = Localize("Speed: Stopped");
-			break;
-		case CTAS::EPlaybackSpeed::PLAYBACK_SLOW:
-			pSpeedText = Localize("Speed: > Slow");
-			break;
-		case CTAS::EPlaybackSpeed::PLAYBACK_MEDIUM:
-			pSpeedText = Localize("Speed: > Normal");
-			break;
-		case CTAS::EPlaybackSpeed::PLAYBACK_FAST:
-			pSpeedText = Localize("Speed: >> Fast");
-			break;
-	}
-	str_format(aBuf, sizeof(aBuf), "%s", pSpeedText);
-	Right.HSplitTop(20.0f, &Label, &Right);
-	Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
+        // Add playback speed controls
+        Right.HSplitTop(10.0f, nullptr, &Right);
+        Right.HSplitTop(20.0f, &Label, &Right);
+        Ui()->DoLabel(&Label, Localize("Playback Controls"), 14.0f, TEXTALIGN_ML);
 
-	// Add playback speed controls
-	Right.HSplitTop(10.0f, nullptr, &Right);
-	Right.HSplitTop(20.0f, &Label, &Right);
-	Ui()->DoLabel(&Label, Localize("Playback Controls"), 14.0f, TEXTALIGN_ML);
+        CUIRect SpeedRow, SpeedButton1, SpeedButton2, SpeedButton3, SpeedButton4;
+        Right.HSplitTop(24.0f, &SpeedRow, &Right);
+        SpeedRow.VSplitMid(&SpeedButton1, &SpeedButton2);
+        SpeedButton1.VSplitMid(&SpeedButton1, &SpeedButton4); // Split first half again
+        SpeedButton2.VSplitMid(&SpeedButton3, &SpeedButton2); // Swap middle button to correct position
 
-	CUIRect SpeedRow, SpeedButton1, SpeedButton2, SpeedButton3, SpeedButton4;
-	Right.HSplitTop(24.0f, &SpeedRow, &Right);
-	SpeedRow.VSplitMid(&SpeedButton1, &SpeedButton2);
-	SpeedButton1.VSplitMid(&SpeedButton1, &SpeedButton4); // Split first half again
-	SpeedButton2.VSplitMid(&SpeedButton3, &SpeedButton2); // Swap middle button to correct position
-
-	static CButtonContainer s_SpeedDownButton, s_NormalSpeedButton, s_SpeedUpButton, s_RewindButton;
-	if(DoButton_Menu(&s_RewindButton, Localize("<<"), 0, &SpeedButton4))
-	{
-		GameClient()->Console()->ExecuteLine("tas_rewind_back", -1, false);
-	}
-	if(DoButton_Menu(&s_SpeedDownButton, Localize("<"), 0, &SpeedButton1))
-	{
-		GameClient()->Console()->ExecuteLine("tas_slow_down", -1, false);
-	}
-	if(DoButton_Menu(&s_NormalSpeedButton, Localize("||"), 0, &SpeedButton3))
-	{
-		GameClient()->Console()->ExecuteLine("tas_normal_speed", -1, false);
-	}
-	if(DoButton_Menu(&s_SpeedUpButton, Localize(">"), 0, &SpeedButton2))
-	{
-		GameClient()->Console()->ExecuteLine("tas_speed_up", -1, false);
-	}
+        static CButtonContainer s_SpeedDownButton, s_NormalSpeedButton, s_SpeedUpButton, s_RewindButton;
+        if(DoButton_Menu(&s_RewindButton, Localize("<<"), 0, &SpeedButton4))
+        {
+                GameClient()->m_Tas.Console()->ExecuteLine("tas_rewind_back");
+        }
+        if(DoButton_Menu(&s_SpeedDownButton, Localize("<"), 0, &SpeedButton1))
+        {
+                GameClient()->m_Tas.Console()->ExecuteLine("tas_slow_down");
+        }
+        if(DoButton_Menu(&s_NormalSpeedButton, Localize("||"), 0, &SpeedButton3))
+        {
+                GameClient()->m_Tas.Console()->ExecuteLine("tas_normal_speed");
+        }
+        if(DoButton_Menu(&s_SpeedUpButton, Localize(">"), 0, &SpeedButton2))
+        {
+                GameClient()->m_Tas.Console()->ExecuteLine("tas_speed_up");
+        }
+}
 }
 
 CUi::EPopupMenuFunctionResult CMenus::PopupTasPicker(void *pContext, CUIRect View, bool Active)
