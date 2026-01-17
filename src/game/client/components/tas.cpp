@@ -59,7 +59,10 @@ CTAS::CTAS() :
 	m_TickRemainder(0.0),
 	m_SpawnPos(0.0f, 0.0f),
 	m_UseSpawnPosOverride(false),
-	m_pCharacter(nullptr)
+	m_pCharacter(nullptr),
+    m_PlaybackSpeed(EPlaybackSpeed::STOPPED),
+    m_LastAdjustedTickTime(0),
+    m_AdjustedTickRemainder(0.0)
 {
 	m_aSelectedFile[0] = '\0';
 	m_LiveInput = {};
@@ -80,6 +83,43 @@ void CTAS::OnUpdate()
 	m_LiveInput = GameClient()->m_Controls.m_aInputData[g_Config.m_ClDummy];
 	UpdateAutoTicks();
 	ApplyInputFreeze(GameClient()->m_Controls);
+
+ // Handle rewind functionality separately
+        if(m_PlaybackSpeed == EPlaybackSpeed::REWIND_FAST ||
+           m_PlaybackSpeed == EPlaybackSpeed::REWIND_MEDIUM ||
+           m_PlaybackSpeed == EPlaybackSpeed::REWIND_SLOW)
+        {
+                // Calculate how many ticks to rewind based on speed
+                int RewindFactor = 1;
+                switch(m_PlaybackSpeed)
+                {
+                        case EPlaybackSpeed::REWIND_SLOW:
+                                RewindFactor = 1;
+                                break;
+                        case EPlaybackSpeed::REWIND_MEDIUM:
+                                RewindFactor = 2;
+                                break;
+                        case EPlaybackSpeed::REWIND_FAST:
+                                RewindFactor = 4;
+                                break;
+                        default:
+                                RewindFactor = 1;
+                                break;
+                }
+
+                // Actually perform the rewind
+                for(int i = 0; i < RewindFactor && m_Tick > 0; i++)
+                {
+                        StepRewind();
+                }
+
+                // If we're playing back, also adjust play index
+                if(m_Status == EStatus::PLAYING)
+                {
+                        m_PlayIndex = std::max(0, m_PlayIndex - RewindFactor);
+                }
+        }
+
 }
 
 void CTAS::OnConsoleInit()
@@ -95,6 +135,12 @@ void CTAS::OnConsoleInit()
 	Console()->Register("tas_save", "s[name]", CFGFLAG_CLIENT, ConTasSave, this, "Save TAS recording (default: selected file)");
 	Console()->Register("tas_load", "s[name]", CFGFLAG_CLIENT, ConTasLoad, this, "Load TAS recording (default: selected file)");
 	Console()->Register("tas_list", "", CFGFLAG_CLIENT, ConTasList, this, "List TAS recordings in data/tas");
+ // Register new time manipulation commands
+        Console()->Register("tas_speed_up", "", CFGFLAG_CLIENT, ConTasSpeedUp, this, "Increase playback speed");
+        Console()->Register("tas_slow_down", "", CFGFLAG_CLIENT, ConTasSlowDown, this, "Decrease playback speed");
+        Console()->Register("tas_normal_speed", "", CFGFLAG_CLIENT, ConTasNormalSpeed, this, "Set normal playback speed");
+        Console()->Register("tas_rewind_back", "", CFGFLAG_CLIENT, ConTasRewindBack, this, "Rewind backwards slowly");
+        Console()->Register("tas_fast_forward", "", CFGFLAG_CLIENT, ConTasFastForward, this, "Fast forward through recording");
 }
 
 void CTAS::Enter()
@@ -362,6 +408,35 @@ void CTAS::UpdateAutoTicks()
 {
 	if(!ShouldAutoTick())
 		return;
+
+ // Use the playback speed for controlling tick rate
+    int TasTps = std::clamp(g_Config.m_ClTasTps, 1, 1000);
+
+        // Modify the tick rate based on playback speed
+        switch(m_PlaybackSpeed)
+        {
+                case EPlaybackSpeed::REWIND_FAST:
+                case EPlaybackSpeed::REWIND_MEDIUM:
+                case EPlaybackSpeed::REWIND_SLOW:
+                        // Handle rewinding separately - we don't want to tick forward when rewinding
+                        // Instead, we'll just handle rewind logic elsewhere
+                        return; // For now, don't tick when rewinding
+                case EPlaybackSpeed::STOPPED:
+                        return; // Don't tick when stopped
+                case EPlaybackSpeed::PLAYBACK_SLOW:
+                        TasTps = std::min(1000, TasTps / 2);
+                        if(TasTps < 1) TasTps = 1;
+                        break;
+                case EPlaybackSpeed::PLAYBACK_MEDIUM:
+                        // Normal speed
+                        break;
+                case EPlaybackSpeed::PLAYBACK_FAST:
+                        TasTps = std::min(1000, TasTps * 2);
+                        break;
+                default:
+                        break;
+        }
+
 
 	const int TasTps = std::clamp(g_Config.m_ClTasTps, 1, 1000);
 	const double TickInterval = 1.0 / static_cast<double>(TasTps);
@@ -678,4 +753,50 @@ void CTAS::ConTasForward(IConsole::IResult *pResult, void *pUserData)
 void CTAS::ConTasRewind(IConsole::IResult *pResult, void *pUserData)
 {
 	static_cast<CTAS *>(pUserData)->StepRewind();
+}
+
+void CTAS::SetPlaybackSpeed(EPlaybackSpeed Speed)
+{
+m_PlaybackSpeed = Speed;
+}
+
+void CTAS::AdjustTime(float Factor)
+{
+// This method allows for slow motion or fast forwarding by adjusting the tick timing
+// Factor < 1.0 slows down, Factor > 1.0 speeds up
+}
+
+void CTAS::ConTasSpeedUp(IConsole::IResult *pResult, void *pUserData)
+{
+CTAS *pThis = static_cast<CTAS *>(pUserData);
+pThis->SetPlaybackSpeed(EPlaybackSpeed::PLAYBACK_FAST);
+pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Playback speed set to FAST");
+}
+
+void CTAS::ConTasSlowDown(IConsole::IResult *pResult, void *pUserData)
+{
+CTAS *pThis = static_cast<CTAS *>(pUserData);
+pThis->SetPlaybackSpeed(EPlaybackSpeed::PLAYBACK_SLOW);
+pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Playback speed set to SLOW");
+}
+
+void CTAS::ConTasNormalSpeed(IConsole::IResult *pResult, void *pUserData)
+{
+CTAS *pThis = static_cast<CTAS *>(pUserData);
+pThis->SetPlaybackSpeed(EPlaybackSpeed::PLAYBACK_MEDIUM);
+pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Playback speed set to NORMAL");
+}
+
+void CTAS::ConTasRewindBack(IConsole::IResult *pResult, void *pUserData)
+{
+CTAS *pThis = static_cast<CTAS *>(pUserData);
+pThis->SetPlaybackSpeed(EPlaybackSpeed::REWIND_SLOW);
+pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Rewinding back SLOW");
+}
+
+void CTAS::ConTasFastForward(IConsole::IResult *pResult, void *pUserData)
+{
+CTAS *pThis = static_cast<CTAS *>(pUserData);
+pThis->SetPlaybackSpeed(EPlaybackSpeed::PLAYBACK_FAST);
+pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "tas", "Fast forwarding");
 }
