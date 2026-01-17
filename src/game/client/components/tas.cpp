@@ -436,9 +436,6 @@ void CTAS::UpdateAutoTicks()
                 default:
                         break;
         }
-
-
-	const int TasTps = std::clamp(g_Config.m_ClTasTps, 1, 1000);
 	const double TickInterval = 1.0 / static_cast<double>(TasTps);
 	const int64_t Now = time_get();
 	const double DeltaSeconds = static_cast<double>(Now - m_LastTickTime) / static_cast<double>(time_freq());

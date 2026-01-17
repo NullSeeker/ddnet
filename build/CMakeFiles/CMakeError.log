@@ -1,0 +1,102 @@
+Determining if the __i386 exist failed with the following output:
+Change Dir: /workspace/build/CMakeFiles/CMakeScratch/TryCompile-2pKurb
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_67810/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_67810.dir/build.make CMakeFiles/cmTC_67810.dir/build
+gmake[1]: Entering directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-2pKurb'
+Building C object CMakeFiles/cmTC_67810.dir/CheckSymbolExists.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_67810.dir/CheckSymbolExists.c.o -c /workspace/build/CMakeFiles/CMakeScratch/TryCompile-2pKurb/CheckSymbolExists.c
+/workspace/build/CMakeFiles/CMakeScratch/TryCompile-2pKurb/CheckSymbolExists.c: In function ‘main’:
+/workspace/build/CMakeFiles/CMakeScratch/TryCompile-2pKurb/CheckSymbolExists.c:7:19: error: ‘__i386’ undeclared (first use in this function)
+    7 |   return ((int*)(&__i386))[argc];
+      |                   ^~~~~~
+/workspace/build/CMakeFiles/CMakeScratch/TryCompile-2pKurb/CheckSymbolExists.c:7:19: note: each undeclared identifier is reported only once for each function it appears in
+gmake[1]: *** [CMakeFiles/cmTC_67810.dir/build.make:78: CMakeFiles/cmTC_67810.dir/CheckSymbolExists.c.o] Error 1
+gmake[1]: Leaving directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-2pKurb'
+gmake: *** [Makefile:127: cmTC_67810/fast] Error 2
+
+
+File CheckSymbolExists.c:
+/* */
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef __i386
+  return ((int*)(&__i386))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Performing C SOURCE FILE Test FLAG_SUPPORTED_fuse_ld_mold failed with the following output:
+Change Dir: /workspace/build/CMakeFiles/CMakeScratch/TryCompile-p8tVCz
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_cc21d/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_cc21d.dir/build.make CMakeFiles/cmTC_cc21d.dir/build
+gmake[1]: Entering directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-p8tVCz'
+Building C object CMakeFiles/cmTC_cc21d.dir/src.c.o
+/usr/bin/cc -DFLAG_SUPPORTED_fuse_ld_mold   -o CMakeFiles/cmTC_cc21d.dir/src.c.o -c /workspace/build/CMakeFiles/CMakeScratch/TryCompile-p8tVCz/src.c
+Linking C executable cmTC_cc21d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_cc21d.dir/link.txt --verbose=1
+/usr/bin/cc -fuse-ld=mold CMakeFiles/cmTC_cc21d.dir/src.c.o -o cmTC_cc21d 
+collect2: fatal error: cannot find 'ld'
+compilation terminated.
+gmake[1]: *** [CMakeFiles/cmTC_cc21d.dir/build.make:99: cmTC_cc21d] Error 1
+gmake[1]: Leaving directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-p8tVCz'
+gmake: *** [Makefile:127: cmTC_cc21d/fast] Error 2
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C SOURCE FILE Test FLAG_SUPPORTED_fuse_ld_lld failed with the following output:
+Change Dir: /workspace/build/CMakeFiles/CMakeScratch/TryCompile-gMXxGz
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_486ee/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_486ee.dir/build.make CMakeFiles/cmTC_486ee.dir/build
+gmake[1]: Entering directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-gMXxGz'
+Building C object CMakeFiles/cmTC_486ee.dir/src.c.o
+/usr/bin/cc -DFLAG_SUPPORTED_fuse_ld_lld   -o CMakeFiles/cmTC_486ee.dir/src.c.o -c /workspace/build/CMakeFiles/CMakeScratch/TryCompile-gMXxGz/src.c
+Linking C executable cmTC_486ee
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_486ee.dir/link.txt --verbose=1
+/usr/bin/cc -fuse-ld=lld CMakeFiles/cmTC_486ee.dir/src.c.o -o cmTC_486ee 
+collect2: fatal error: cannot find 'ld'
+compilation terminated.
+gmake[1]: *** [CMakeFiles/cmTC_486ee.dir/build.make:99: cmTC_486ee] Error 1
+gmake[1]: Leaving directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-gMXxGz'
+gmake: *** [Makefile:127: cmTC_486ee/fast] Error 2
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C++ SOURCE FILE Test FLAG_SUPPORTED_Wshadow_all failed with the following output:
+Change Dir: /workspace/build/CMakeFiles/CMakeScratch/TryCompile-BoLy7S
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_a8964/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_a8964.dir/build.make CMakeFiles/cmTC_a8964.dir/build
+gmake[1]: Entering directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-BoLy7S'
+Building CXX object CMakeFiles/cmTC_a8964.dir/src.cxx.o
+/usr/bin/c++ -DFLAG_SUPPORTED_Wshadow_all  -Wshadow-all -o CMakeFiles/cmTC_a8964.dir/src.cxx.o -c /workspace/build/CMakeFiles/CMakeScratch/TryCompile-BoLy7S/src.cxx
+c++: error: unrecognized command-line option '-Wshadow-all'; did you mean '-Wshadow'?
+gmake[1]: *** [CMakeFiles/cmTC_a8964.dir/build.make:78: CMakeFiles/cmTC_a8964.dir/src.cxx.o] Error 1
+gmake[1]: Leaving directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-BoLy7S'
+gmake: *** [Makefile:127: cmTC_a8964/fast] Error 2
+
+
+Source file was:
+int main() { return 0; }
+
+Performing C++ SOURCE FILE Test FLAG_SUPPORTED_Wthread_safety failed with the following output:
+Change Dir: /workspace/build/CMakeFiles/CMakeScratch/TryCompile-CWZpYM
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_1d07a/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_1d07a.dir/build.make CMakeFiles/cmTC_1d07a.dir/build
+gmake[1]: Entering directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-CWZpYM'
+Building CXX object CMakeFiles/cmTC_1d07a.dir/src.cxx.o
+/usr/bin/c++ -DFLAG_SUPPORTED_Wthread_safety  -Wthread-safety -o CMakeFiles/cmTC_1d07a.dir/src.cxx.o -c /workspace/build/CMakeFiles/CMakeScratch/TryCompile-CWZpYM/src.cxx
+c++: error: unrecognized command-line option '-Wthread-safety'
+gmake[1]: *** [CMakeFiles/cmTC_1d07a.dir/build.make:78: CMakeFiles/cmTC_1d07a.dir/src.cxx.o] Error 1
+gmake[1]: Leaving directory '/workspace/build/CMakeFiles/CMakeScratch/TryCompile-CWZpYM'
+gmake: *** [Makefile:127: cmTC_1d07a/fast] Error 2
+
+
+Source file was:
+int main() { return 0; }
+
