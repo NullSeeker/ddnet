@@ -80,6 +80,11 @@ public:
 	bool HasRecording() const { return !m_vRecording.empty(); }
 	const char *SelectedFile() const { return m_aSelectedFile; }
 	void SetSelectedFile(const char *pFilename);
+	
+	// Time manipulation methods
+	void SetPlaybackSpeed(EPlaybackSpeed Speed);
+	EPlaybackSpeed GetPlaybackSpeed() const { return m_PlaybackSpeed; }
+	void AdjustTime(float Factor); // For slow motion/fast forward
 
 private:
 	void EnsureWorld();
@@ -109,6 +114,12 @@ private:
 	static void ConTasSave(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasLoad(IConsole::IResult *pResult, void *pUserData);
 	static void ConTasList(IConsole::IResult *pResult, void *pUserData);
+	// New console commands for time manipulation
+	static void ConTasSpeedUp(IConsole::IResult *pResult, void *pUserData);
+	static void ConTasSlowDown(IConsole::IResult *pResult, void *pUserData);
+	static void ConTasNormalSpeed(IConsole::IResult *pResult, void *pUserData);
+	static void ConTasRewindBack(IConsole::IResult *pResult, void *pUserData);
+	static void ConTasFastForward(IConsole::IResult *pResult, void *pUserData);
 
  // New console commands for time manipulation
         static void ConTasSpeedUp(IConsole::IResult *pResult, void *pUserData);
