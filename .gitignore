@@ -1,1 +1,31 @@
-Nothing should be ignored based on the provided file changes. The modification of 'src/game/client/components/tas.h' is a source code file that should be tracked in version control. There are no build artifacts, dependencies, or temporary files in the changes that would warrant adding ignore rules.
+```
+# CMake build artifacts
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+CMakeScripts/
+Testing/
+
+# Compiler output
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# CMake scratch directories
+CMakeScratch/
+```

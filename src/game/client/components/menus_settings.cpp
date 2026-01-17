@@ -3103,21 +3103,20 @@ void CMenus::RenderSettingsTAS(CUIRect MainView)
         static CButtonContainer s_SpeedDownButton, s_NormalSpeedButton, s_SpeedUpButton, s_RewindButton;
         if(DoButton_Menu(&s_RewindButton, Localize("<<"), 0, &SpeedButton4))
         {
-                GameClient()->m_Tas.Console()->ExecuteLine("tas_rewind_back");
+                Console()->ExecuteLine("tas_rewind_back", IConsole::CLIENT_ID_GAME);
         }
         if(DoButton_Menu(&s_SpeedDownButton, Localize("<"), 0, &SpeedButton1))
         {
-                GameClient()->m_Tas.Console()->ExecuteLine("tas_slow_down");
+                Console()->ExecuteLine("tas_slow_down", IConsole::CLIENT_ID_GAME);
         }
         if(DoButton_Menu(&s_NormalSpeedButton, Localize("||"), 0, &SpeedButton3))
         {
-                GameClient()->m_Tas.Console()->ExecuteLine("tas_normal_speed");
+                Console()->ExecuteLine("tas_normal_speed", IConsole::CLIENT_ID_GAME);
         }
         if(DoButton_Menu(&s_SpeedUpButton, Localize(">"), 0, &SpeedButton2))
         {
-                GameClient()->m_Tas.Console()->ExecuteLine("tas_speed_up");
+                Console()->ExecuteLine("tas_speed_up", IConsole::CLIENT_ID_GAME);
         }
-}
 }
 
 CUi::EPopupMenuFunctionResult CMenus::PopupTasPicker(void *pContext, CUIRect View, bool Active)
