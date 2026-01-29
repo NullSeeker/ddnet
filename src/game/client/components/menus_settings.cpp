@@ -108,6 +108,10 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 		Left.HSplitTop(5.0f, nullptr, &Left);
 		Left.HSplitTop(20.0f, &Button, &Left);
 		Ui()->DoScrollbarOption(&g_Config.m_ClAutoFreezeDistance, &g_Config.m_ClAutoFreezeDistance, &Button, Localize("Auto freeze distance"), 0, 320, &CUi::ms_LinearScrollbarScale, 0, "px");
+		Left.HSplitTop(5.0f, nullptr, &Left);
+		Left.HSplitTop(20.0f, &Button, &Left);
+		if(DoButton_CheckBox(&g_Config.m_ClAutoUnfreeze, Localize("Auto unfreeze with laser bounce"), g_Config.m_ClAutoUnfreeze, &Button))
+			g_Config.m_ClAutoUnfreeze ^= 1;
 	}
 
 	// client

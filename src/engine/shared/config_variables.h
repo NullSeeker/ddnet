@@ -61,6 +61,7 @@ MACRO_CONFIG_INT(ClEnablePingColor, cl_enable_ping_color, 1, 0, 1, CFGFLAG_CLIEN
 MACRO_CONFIG_INT(ClAutoswitchWeapons, cl_autoswitch_weapons, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Auto switch weapon on pickup")
 MACRO_CONFIG_INT(ClAutoswitchWeaponsOutOfAmmo, cl_autoswitch_weapons_out_of_ammo, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Auto switch weapon when out of ammo")
 MACRO_CONFIG_INT(ClAutoFreeze, cl_auto_freeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Auto freeze by shooting laser when near freeze tiles")
+MACRO_CONFIG_INT(ClAutoUnfreeze, cl_auto_unfreeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Auto unfreeze by aiming a laser bounce at yourself")
 MACRO_CONFIG_INT(ClAutoFreezeDistance, cl_auto_freeze_distance, 64, 0, 320, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Distance in pixels to detect freeze tiles for auto freeze")
 
 MACRO_CONFIG_INT(ClShowhud, cl_showhud, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show ingame HUD")
