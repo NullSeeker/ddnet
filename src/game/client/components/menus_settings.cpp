@@ -99,6 +99,15 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 		Left.HSplitTop(20.0f, &Button, &Left);
 		if(DoButton_CheckBox(&g_Config.m_ClAutoswitchWeaponsOutOfAmmo, Localize("Switch weapon when out of ammo"), g_Config.m_ClAutoswitchWeaponsOutOfAmmo, &Button))
 			g_Config.m_ClAutoswitchWeaponsOutOfAmmo ^= 1;
+
+		// auto freeze
+		Left.HSplitTop(5.0f, nullptr, &Left);
+		Left.HSplitTop(20.0f, &Button, &Left);
+		if(DoButton_CheckBox(&g_Config.m_ClAutoFreeze, Localize("Auto freeze near freeze tiles"), g_Config.m_ClAutoFreeze, &Button))
+			g_Config.m_ClAutoFreeze ^= 1;
+		Left.HSplitTop(5.0f, nullptr, &Left);
+		Left.HSplitTop(20.0f, &Button, &Left);
+		Ui()->DoScrollbarOption(&g_Config.m_ClAutoFreezeDistance, &g_Config.m_ClAutoFreezeDistance, &Button, Localize("Auto freeze distance"), 0, 320, &CUi::ms_LinearScrollbarScale, 0, "px");
 	}
 
 	// client
