@@ -20,6 +20,7 @@ class CControls : public CComponent
 public:
 	float GetMinMouseDistance() const;
 	float GetMaxMouseDistance() const;
+	void UpdateAutoFreeze();
 
 	enum class EMouseInputType
 	{
@@ -58,6 +59,8 @@ public:
 	void ResetInput(int Dummy);
 
 private:
+	bool IsFreezeTileNear(vec2 Pos, float Distance) const;
+	bool ShouldTriggerAutoFreeze(int Dummy) const;
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);

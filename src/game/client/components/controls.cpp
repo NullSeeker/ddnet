@@ -21,6 +21,12 @@
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
 #include <game/collision.h>
+#include <game/mapitems.h>
+
+namespace
+{
+constexpr float FREEZE_TILE_SCAN_STEP = 16.0f;
+}
 
 CControls::CControls()
 {
@@ -595,6 +601,8 @@ void CControls::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
+	UpdateAutoFreeze();
+
 	if(g_Config.m_ClAutoswitchWeaponsOutOfAmmo && !GameClient()->m_GameInfo.m_UnlimitedAmmo && GameClient()->m_Snap.m_pLocalCharacter)
 	{
 		// Keep track of ammo count, we know weapon ammo only when we switch to that weapon, this is tracked on server and protocol does not track that
@@ -634,6 +642,73 @@ void CControls::OnRender()
 	{
 		m_aTargetPos[g_Config.m_ClDummy] = m_aMousePos[g_Config.m_ClDummy];
 	}
+}
+
+bool CControls::IsFreezeTileNear(vec2 Pos, float Distance) const
+{
+	if(!Collision())
+		return false;
+
+	for(float dy = -Distance; dy <= Distance; dy += FREEZE_TILE_SCAN_STEP)
+	{
+		for(float dx = -Distance; dx <= Distance; dx += FREEZE_TILE_SCAN_STEP)
+		{
+			const vec2 CheckPos = Pos + vec2(dx, dy);
+			const int Index = Collision()->GetMapIndex(CheckPos);
+			if(Index < 0)
+				continue;
+			const int Tile = Collision()->GetTileIndex(Index);
+			const int FrontTile = Collision()->GetFrontTileIndex(Index);
+			if(Tile == TILE_FREEZE || Tile == TILE_DFREEZE || Tile == TILE_LFREEZE ||
+				FrontTile == TILE_FREEZE || FrontTile == TILE_DFREEZE || FrontTile == TILE_LFREEZE)
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool CControls::ShouldTriggerAutoFreeze(int Dummy) const
+{
+	if(!g_Config.m_ClAutoFreeze)
+		return false;
+	if(!GameClient()->m_Snap.m_pLocalCharacter || GameClient()->m_Snap.m_SpecInfo.m_Active)
+		return false;
+
+	const auto &ClientData = GameClient()->m_aClients[GameClient()->m_Snap.m_LocalClientId];
+	if(ClientData.m_Invincible || ClientData.m_Super)
+		return false;
+	if(ClientData.m_LiveFrozen || ClientData.m_DeepFrozen)
+		return false;
+
+	const int FreezeEnd = ClientData.m_FreezeEnd;
+	if(FreezeEnd != 0)
+		return false;
+
+	const float Distance = (float)g_Config.m_ClAutoFreezeDistance;
+	return IsFreezeTileNear(GameClient()->m_LocalCharacterPos, Distance);
+}
+
+void CControls::UpdateAutoFreeze()
+{
+	const int Dummy = g_Config.m_ClDummy;
+	if(GameClient()->m_Snap.m_pLocalCharacter)
+	{
+		const int Weapon = maximum(0, GameClient()->m_Snap.m_pLocalCharacter->m_Weapon % NUM_WEAPONS);
+		m_aAmmoCount[Weapon] = GameClient()->m_Snap.m_pLocalCharacter->m_AmmoCount;
+	}
+	if(!ShouldTriggerAutoFreeze(Dummy))
+		return;
+
+	const int LaserWeapon = WEAPON_LASER;
+	if(m_aAmmoCount[LaserWeapon] <= 0)
+		return;
+
+	m_aInputData[Dummy].m_WantedWeapon = LaserWeapon + 1;
+	m_aInputData[Dummy].m_Fire++;
+	m_aInputData[Dummy].m_Fire &= INPUT_STATE_MASK;
 }
 
 bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
