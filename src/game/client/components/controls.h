@@ -60,7 +60,9 @@ public:
 
 private:
 	bool IsFreezeTileNear(vec2 Pos, float Distance) const;
+	bool FindAutoUnfreezeTarget(int Dummy, vec2 &OutTarget) const;
 	bool ShouldTriggerAutoFreeze(int Dummy) const;
+	bool ShouldTriggerAutoUnfreeze(int Dummy) const;
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);

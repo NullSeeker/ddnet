@@ -21,11 +21,14 @@
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
 #include <game/collision.h>
+#include <game/gamecore.h>
 #include <game/mapitems.h>
 
 namespace
 {
 constexpr float FREEZE_TILE_SCAN_STEP = 16.0f;
+constexpr int AUTO_UNFREEZE_BOUNCE_LIMIT = 2;
+constexpr int AUTO_UNFREEZE_ANGLE_STEPS = 360;
 }
 
 CControls::CControls()
@@ -670,6 +673,96 @@ bool CControls::IsFreezeTileNear(vec2 Pos, float Distance) const
 	return false;
 }
 
+bool CControls::FindAutoUnfreezeTarget(int Dummy, vec2 &OutTarget) const
+{
+	if(!Collision() || !GameClient()->m_Snap.m_pLocalCharacter)
+		return false;
+
+	const vec2 StartPos = GameClient()->m_LocalCharacterPos;
+	const float LaserReach = GameClient()->m_aTuning[Dummy].m_LaserReach;
+	const float LaserBounceCost = GameClient()->m_aTuning[Dummy].m_LaserBounceCost;
+	const int LaserBounceNum = GameClient()->m_aTuning[Dummy].m_LaserBounceNum;
+	const int BounceLimit = minimum(AUTO_UNFREEZE_BOUNCE_LIMIT, LaserBounceNum);
+
+	const float ScanRadius = minimum((float)g_Config.m_ClAutoFreezeDistance, LaserReach * 0.9f);
+	const vec2 EvalPos = StartPos + vec2(0.0f, -8.0f);
+	const float HitRadius = CCharacterCore::PhysicalSize() * 0.85f;
+
+	vec2 BestTarget = vec2(0.0f, 0.0f);
+	float BestScore = 0.0f;
+	bool Found = false;
+
+	const float AngleStep = 2.0f * pi / (float)AUTO_UNFREEZE_ANGLE_STEPS;
+	for(int i = 0; i < AUTO_UNFREEZE_ANGLE_STEPS; ++i)
+	{
+		const float Angle = AngleStep * (float)i;
+		vec2 Dir = direction(Angle);
+		vec2 From = StartPos;
+		float Energy = LaserReach;
+		int Bounces = 0;
+		bool HitSelf = false;
+
+		while(Energy > 0.0f)
+		{
+			vec2 To = From + Dir * Energy;
+			vec2 CollisionPos;
+			vec2 EndPos = To;
+			const int Hit = Collision()->IntersectLineTeleWeapon(From, To, &CollisionPos, &EndPos);
+			const float SegmentLength = distance(From, EndPos);
+			vec2 ClosestPoint;
+			closest_point_on_line(From, EndPos, EvalPos, ClosestPoint);
+			if(distance(ClosestPoint, EvalPos) <= HitRadius)
+			{
+				HitSelf = true;
+				break;
+			}
+
+			if(!Hit)
+				break;
+
+			if(Bounces >= BounceLimit)
+				break;
+
+			vec2 TempPos = EndPos;
+			vec2 TempDir = Dir * 4.0f;
+			int StoredTile = 0;
+			if(Hit == -1)
+			{
+				StoredTile = Collision()->GetTile(round_to_int(CollisionPos.x), round_to_int(CollisionPos.y));
+				Collision()->SetCollisionAt(round_to_int(CollisionPos.x), round_to_int(CollisionPos.y), TILE_SOLID);
+			}
+			Collision()->MovePoint(&TempPos, &TempDir, 1.0f, nullptr);
+			if(Hit == -1)
+			{
+				Collision()->SetCollisionAt(round_to_int(CollisionPos.x), round_to_int(CollisionPos.y), StoredTile);
+			}
+
+			Dir = normalize(TempDir);
+			Energy -= SegmentLength + LaserBounceCost;
+			From = TempPos;
+			++Bounces;
+		}
+
+		if(HitSelf)
+		{
+			const vec2 Target = Dir * ScanRadius;
+			const float Score = dot(Dir, normalize(EvalPos - StartPos));
+			if(!Found || Score > BestScore)
+			{
+				BestScore = Score;
+				BestTarget = Target;
+				Found = true;
+			}
+		}
+	}
+
+	if(!Found)
+		return false;
+
+	OutTarget = BestTarget;
+	return true;
+}
+
 bool CControls::ShouldTriggerAutoFreeze(int Dummy) const
 {
 	if(!g_Config.m_ClAutoFreeze)
@@ -691,6 +784,26 @@ bool CControls::ShouldTriggerAutoFreeze(int Dummy) const
 	return IsFreezeTileNear(GameClient()->m_LocalCharacterPos, Distance);
 }
 
+bool CControls::ShouldTriggerAutoUnfreeze(int Dummy) const
+{
+	if(!g_Config.m_ClAutoUnfreeze)
+		return false;
+	if(!GameClient()->m_Snap.m_pLocalCharacter || GameClient()->m_Snap.m_SpecInfo.m_Active)
+		return false;
+
+	const auto &ClientData = GameClient()->m_aClients[GameClient()->m_Snap.m_LocalClientId];
+	if(ClientData.m_Invincible || ClientData.m_Super)
+		return false;
+	if(!ClientData.m_LiveFrozen && !ClientData.m_DeepFrozen)
+		return false;
+
+	const int FreezeEnd = ClientData.m_FreezeEnd;
+	if(FreezeEnd != -1 && FreezeEnd != 0)
+		return false;
+
+	return true;
+}
+
 void CControls::UpdateAutoFreeze()
 {
 	const int Dummy = g_Config.m_ClDummy;
@@ -699,11 +812,25 @@ void CControls::UpdateAutoFreeze()
 		const int Weapon = maximum(0, GameClient()->m_Snap.m_pLocalCharacter->m_Weapon % NUM_WEAPONS);
 		m_aAmmoCount[Weapon] = GameClient()->m_Snap.m_pLocalCharacter->m_AmmoCount;
 	}
-	if(!ShouldTriggerAutoFreeze(Dummy))
-		return;
-
 	const int LaserWeapon = WEAPON_LASER;
 	if(m_aAmmoCount[LaserWeapon] <= 0)
+		return;
+
+	if(ShouldTriggerAutoUnfreeze(Dummy))
+	{
+		vec2 Target;
+		if(FindAutoUnfreezeTarget(Dummy, Target))
+		{
+			m_aInputData[Dummy].m_WantedWeapon = LaserWeapon + 1;
+			m_aMousePos[Dummy] = Target;
+			m_aMouseInputType[Dummy] = EMouseInputType::AUTOMATED;
+			m_aInputData[Dummy].m_Fire++;
+			m_aInputData[Dummy].m_Fire &= INPUT_STATE_MASK;
+		}
+		return;
+	}
+
+	if(!ShouldTriggerAutoFreeze(Dummy))
 		return;
 
 	m_aInputData[Dummy].m_WantedWeapon = LaserWeapon + 1;
